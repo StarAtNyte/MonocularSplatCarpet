@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Splat Carpet - Rug Placement Viewer</title>
+    <title>Splat Carpet - Rug Placement Viewer (Better Floor Detection)</title>
     <style>
         * {
             margin: 0;
@@ -208,6 +208,8 @@
             <select id="splatSelect">
                 <option value="splats/sharp_room1.ply" selected>Sharp Room 1</option>
                 <option value="splats/sharp_room2.ply">Sharp Room 2</option>
+                <option value="splats/sharp_room3.ply">Sharp Room 3</option>
+                <option value="splats/sharp_room4.ply">Sharp Room 4</option>
             </select>
         </div>
         <div id="rugSelectContainer">
@@ -248,6 +250,8 @@
 
         let viewer, rug;
         let detectedPlane = null;
+        let floorPlaneMesh = null;
+        let floorPlaneVisible = false;
         let gui;
         let customRugTexture = null;
         let splatLoaded = false;
@@ -276,11 +280,10 @@
         const rugParams = {
             visible: true,
             offsetX: 0,
-            offsetY: 0,
+            offsetY: 0.0, // Small offset to place rug above the floor visualization grid
             offsetZ: 0,
             rotation: 0,
-            scale: 0.5,
-            elevate: 0.02 // Offset above detected floor to avoid clipping with thick floor
+            scale: 0.5
         };
 
         function ransacPlaneDetection(points, iterations = 2000, threshold = 0.05) {
@@ -356,8 +359,9 @@
                     if (len === 0) continue;
                     n.x /= len; n.y /= len; n.z /= len;
 
-                    // Strict flat check (allow normal to point up or down)
-                    if (Math.abs(n.y) < 0.95) continue;
+                    // Relaxed flatness check - allow tilted floors (normal Y component > 0.7)
+                    // This allows detection of floors tilted up to ~45 degrees
+                    if (Math.abs(n.y) < 0.7) continue;
 
                     const d = -(n.x * p1.x + n.y * p1.y + n.z * p1.z);
 
@@ -424,6 +428,50 @@
                     finalPlane.normal.negate();
                     finalPlane.d = -finalPlane.d;
                 }
+            }
+
+            // ADAPTIVE OFFSET CALCULATION:
+            // Calculate distances of points near the floor to determine optimal offset
+            const floorPlane = new THREE.Plane().setFromNormalAndCoplanarPoint(
+                finalPlane.normal,
+                finalPlane.centroid
+            );
+
+            // Collect distances of points near the floor (within 20cm above/below)
+            const nearFloorDistances = [];
+            for (let i = 0; i < Math.min(points.length, 5000); i++) {
+                const p = points[i];
+                const pointVec = new THREE.Vector3(p.x, p.y, p.z);
+                const distance = floorPlane.distanceToPoint(pointVec);
+
+                // Only consider points within reasonable range of the floor
+                if (Math.abs(distance) < 0.2) {
+                    nearFloorDistances.push(distance);
+                }
+            }
+
+            if (nearFloorDistances.length > 50) {
+                // Sort distances and find the 75th percentile of points ABOVE the plane
+                const abovePlane = nearFloorDistances.filter(d => d > 0).sort((a, b) => a - b);
+
+                if (abovePlane.length > 10) {
+                    // Use 75th percentile as the adaptive offset
+                    // This ensures most visible floor surface is above the detected plane
+                    const percentile75Index = Math.floor(abovePlane.length * 0.75);
+                    const adaptiveOffset = abovePlane[percentile75Index];
+
+                    // Clamp between 2cm and 10cm for safety
+                    finalPlane.adaptiveOffset = Math.max(0.02, Math.min(0.10, adaptiveOffset));
+
+                    console.log(`Adaptive offset calculated: ${finalPlane.adaptiveOffset.toFixed(3)}m (from ${abovePlane.length} points)`);
+                } else {
+                    // Fallback to default if not enough data
+                    finalPlane.adaptiveOffset = 0.035;
+                    console.log('Using default offset: insufficient data for adaptive calculation');
+                }
+            } else {
+                finalPlane.adaptiveOffset = 0.035;
+                console.log('Using default offset: insufficient near-floor points');
             }
 
             return finalPlane;
@@ -575,6 +623,52 @@
             });
         }
 
+        function createFloorPlaneVisualization() {
+            // Remove existing floor plane visualization
+            if (floorPlaneMesh && viewer.threeScene) {
+                viewer.threeScene.remove(floorPlaneMesh);
+                floorPlaneMesh.geometry.dispose();
+                floorPlaneMesh.material.dispose();
+                floorPlaneMesh = null;
+            }
+
+            if (!detectedPlane) return;
+
+            // Create a large grid plane at the detected floor position
+            const planeSize = 20; // Large plane to cover most of the scene
+            const gridDivisions = 40;
+
+            // Create plane geometry
+            const geometry = new THREE.PlaneGeometry(planeSize, planeSize, gridDivisions, gridDivisions);
+
+            // Create wireframe material with low opacity
+            const material = new THREE.MeshBasicMaterial({
+                color: 0x00ff00,
+                wireframe: true,
+                transparent: true,
+                opacity: 0.15,
+                depthTest: true,
+                side: THREE.DoubleSide
+            });
+
+            floorPlaneMesh = new THREE.Mesh(geometry, material);
+
+            // Position the plane at the detected floor centroid
+            floorPlaneMesh.position.copy(detectedPlane.centroid);
+
+            // Orient the plane to match the detected floor normal
+            const up = new THREE.Vector3(0, 0, 1);
+            const quaternion = new THREE.Quaternion().setFromUnitVectors(up, detectedPlane.normal);
+            floorPlaneMesh.quaternion.copy(quaternion);
+
+            // Start hidden
+            floorPlaneMesh.visible = floorPlaneVisible;
+
+            if (viewer.threeScene) {
+                viewer.threeScene.add(floorPlaneMesh);
+            }
+        }
+
         function placeRugOnFloor() {
             if (!rug || !detectedPlane) return;
 
@@ -600,14 +694,12 @@
 
             console.log('Camera height above floor:', cameraHeightAboveFloor, 'Target distance:', targetDistance);
 
-            // Strategy: Place rug at a comfortable distance, then project onto floor
+            // Strategy: Place rug at a comfortable distance in front of camera
             const targetPoint = cameraPos.clone().add(cameraDir.multiplyScalar(targetDistance));
 
-            // Project this target point onto the floor plane
-            const distanceToPlane = floorPlane.distanceToPoint(targetPoint);
-            const projectedPoint = targetPoint.clone().sub(plane.normal.clone().multiplyScalar(distanceToPlane));
-
-            let position = projectedPoint.clone();
+            // Use the target point's X and Z, but ALWAYS use the floor centroid's Y
+            // This ensures the rug is exactly on the detected (and offset) floor plane
+            let position = new THREE.Vector3(targetPoint.x, plane.centroid.y, targetPoint.z);
 
             // Verify the position is reasonable
             const distanceFromCamera = position.distanceTo(cameraPos);
@@ -616,32 +708,24 @@
             if (distanceFromCamera < minDistance || distanceFromCamera > maxDistance) {
                 console.log('Distance out of range:', distanceFromCamera, 'Min:', minDistance, 'Max:', maxDistance, 'Adjusting...');
 
-                // Fallback: project camera direction onto floor plane and move in that direction
-                const horizontalDir = cameraDir.clone();
-                horizontalDir.projectOnPlane(plane.normal).normalize();
+                // Fallback: project camera direction onto horizontal plane and move in that direction
+                const horizontalDir = new THREE.Vector3(cameraDir.x, 0, cameraDir.z).normalize();
 
                 if (horizontalDir.length() < 0.1) {
-                    // Looking nearly straight up/down - use floor center with slight offset
+                    // Looking nearly straight up/down - use floor center
                     position = plane.centroid.clone();
                     console.log('Camera looking up/down, using floor center');
                 } else {
-                    // Move from camera position in horizontal direction
-                    position = cameraPos.clone();
-                    // Project camera position onto floor
-                    const camDistToPlane = floorPlane.distanceToPoint(position);
-                    position.sub(plane.normal.clone().multiplyScalar(camDistToPlane));
-                    // Move forward by target distance
-                    position.add(horizontalDir.multiplyScalar(targetDistance));
+                    // Move from camera position in horizontal direction, but keep floor Y
+                    const horizontalCameraPos = new THREE.Vector3(cameraPos.x, plane.centroid.y, cameraPos.z);
+                    position = horizontalCameraPos.add(horizontalDir.multiplyScalar(targetDistance));
                     console.log('Using horizontal projection, distance:', targetDistance);
                 }
             }
 
             console.log('Final rug position:', position, 'Distance from camera:', position.distanceTo(cameraPos));
 
-            // Determine elevation direction based on plane normal
-            const elevationDirection = plane.normal.y > 0 ? -1 : 1;
-            position.add(plane.normal.clone().multiplyScalar(rugParams.elevate * elevationDirection));
-
+            // Apply manual X, Y, and Z offsets
             position.x += rugParams.offsetX;
             position.y += rugParams.offsetY;
             position.z += rugParams.offsetZ;
@@ -667,11 +751,7 @@
             const plane = detectedPlane;
             const position = plane.centroid.clone();
 
-            // Apply elevation
-            const elevationDirection = plane.normal.y > 0 ? -1 : 1;
-            position.add(plane.normal.clone().multiplyScalar(rugParams.elevate * elevationDirection));
-
-            // Apply offsets
+            // Apply X, Y, and Z offsets
             position.x += rugParams.offsetX;
             position.y += rugParams.offsetY;
             position.z += rugParams.offsetZ;
@@ -863,11 +943,9 @@
 
                     // Update offset parameters to reflect the new position
                     const initialPos = detectedPlane.centroid.clone();
-                    const elevationDirection = detectedPlane.normal.y > 0 ? -1 : 1;
-                    initialPos.add(detectedPlane.normal.clone().multiplyScalar(rugParams.elevate * elevationDirection));
 
                     rugParams.offsetX = newCenter.x - initialPos.x;
-                    // Don't update offsetY - keep the rug at the same height
+                    // Don't update offsetY - keep rug at same height when resizing
                     rugParams.offsetZ = newCenter.z - initialPos.z;
 
                     // Update position directly, then apply rotation and scale without recalculating position
@@ -904,10 +982,9 @@
 
                     // Update the offset params to match
                     const initialPos = detectedPlane.centroid.clone();
-                    const elevationDirection = detectedPlane.normal.y > 0 ? -1 : 1;
-                    initialPos.add(detectedPlane.normal.clone().multiplyScalar(rugParams.elevate * elevationDirection));
 
                     rugParams.offsetX = newPos.x - initialPos.x;
+                    // Don't update offsetY - keep rug at same height when dragging
                     rugParams.offsetZ = newPos.z - initialPos.z;
 
                     if (gui) {
@@ -948,7 +1025,7 @@
                 oppositeCornerWorld = null;
                 draggedCornerWorld = null;
                 initialRugCenter = null;
-                viewer.controls.enabled = true;
+                viewer.controls.enabled = false; // Keep controls disabled to lock camera
                 viewer.renderer.domElement.style.cursor = 'default';
                 event.preventDefault();
             }
@@ -969,14 +1046,13 @@
 
             const posFolder = gui.addFolder('Position Offset');
             posFolder.add(rugParams, 'offsetX', -3, 3, 0.01).name('X').onChange(() => updateRugPosition());
-            posFolder.add(rugParams, 'offsetY', -1, 1, 0.01).name('Y').onChange(() => updateRugPosition());
+            posFolder.add(rugParams, 'offsetY', -0.5, 0.5, 0.001).name('Y').onChange(() => updateRugPosition());
             posFolder.add(rugParams, 'offsetZ', -3, 3, 0.01).name('Z').onChange(() => updateRugPosition());
             posFolder.open();
 
             const transformFolder = gui.addFolder('Transform');
             transformFolder.add(rugParams, 'rotation', 0, 360, 1).name('Rotation (°)').onChange(() => updateRug(true));
             transformFolder.add(rugParams, 'scale', 0.1, 10, 0.01).name('Scale').onChange(() => updateRug(true));
-            transformFolder.add(rugParams, 'elevate', -0.05, 0.15, 0.001).name('Elevation').onChange(() => updateRugPosition());
             transformFolder.open();
         }
 
@@ -1012,9 +1088,19 @@
                 const plane = ransacPlaneDetection(points, 2000, 0.05);
 
                 if (plane) {
+                    // MONOCULAR SPLAT FIX: Use adaptive offset based on point distribution
+                    // This compensates for density bias where the detected plane tends
+                    // to be below the visual floor surface due to sparse edges
+                    const upwardOffset = plane.adaptiveOffset || 0.035; // Use calculated or fallback to 3.5cm
+                    plane.centroid.add(plane.normal.clone().multiplyScalar(upwardOffset));
+
+                    console.log(`Applied adaptive floor offset: ${upwardOffset.toFixed(3)}m`);
+
                     detectedPlane = plane;
+                    createFloorPlaneVisualization();
                     status.innerHTML = `<strong>Floor Detected!</strong><br>
                         Height: ${plane.centroid.y.toFixed(2)}<br>
+                        Offset: ${upwardOffset.toFixed(3)}m<br>
                         Ready to place rug!`;
                     return true;
                 } else {
@@ -1108,8 +1194,7 @@
             const savedPosition = (rug && !cameraMoved) ? rug.position.clone() : null;
             const savedParams = (rug && !cameraMoved) ? {
                 rotation: rugParams.rotation,
-                scale: rugParams.scale,
-                elevate: rugParams.elevate
+                scale: rugParams.scale
             } : null;
 
             // Remove old rug if exists
@@ -1139,15 +1224,12 @@
                     // Calculate offsets relative to floor centroid
                     const plane = detectedPlane;
                     const basePosition = plane.centroid.clone();
-                    const elevationDirection = plane.normal.y > 0 ? -1 : 1;
-                    basePosition.add(plane.normal.clone().multiplyScalar(savedParams.elevate * elevationDirection));
 
                     rugParams.offsetX = savedPosition.x - basePosition.x;
                     rugParams.offsetY = savedPosition.y - basePosition.y;
                     rugParams.offsetZ = savedPosition.z - basePosition.z;
                     rugParams.rotation = savedParams.rotation;
                     rugParams.scale = savedParams.scale;
-                    rugParams.elevate = savedParams.elevate;
 
                     // Apply rotation and orientation
                     const up = new THREE.Vector3(0, 0, 1);
@@ -1163,6 +1245,11 @@
                     console.log('Rug replaced at saved position:', savedPosition);
                 } else {
                     // First rug OR camera moved - place based on current camera position
+                    // Reset offsets since we're calculating a fresh position
+                    rugParams.offsetX = 0;
+                    rugParams.offsetY = 0;
+                    rugParams.offsetZ = 0;
+
                     placeRugOnFloor();
 
                     // Save current camera position
@@ -1189,6 +1276,15 @@
             // Remove current rug and its gizmos
             removeCurrentRug();
 
+            // Remove floor plane visualization
+            if (floorPlaneMesh && viewer.threeScene) {
+                viewer.threeScene.remove(floorPlaneMesh);
+                floorPlaneMesh.geometry.dispose();
+                floorPlaneMesh.material.dispose();
+                floorPlaneMesh = null;
+            }
+            floorPlaneVisible = false;
+
             // Clear detected plane
             detectedPlane = null;
 
@@ -1198,11 +1294,10 @@
             // Reset rug params
             rugParams.visible = true;
             rugParams.offsetX = 0;
-            rugParams.offsetY = 0;
+            rugParams.offsetY = 0.0; // Small offset to place rug above the floor visualization grid
             rugParams.offsetZ = 0;
             rugParams.rotation = 0;
             rugParams.scale = 0.5;
-            rugParams.elevate = 0.02;
 
             // Reset file input
             const rugInput = document.getElementById('rugImageInput');
@@ -1292,11 +1387,38 @@
             selfDrivenMode: true
         });
 
-        // Reduce movement speed for smoother navigation
+        // Disable ALL camera controls to fix camera at initial position
         if (viewer.controls) {
-            viewer.controls.keyboardMoveSpeed = 0.02; // Reduced from default (usually 0.1)
-            viewer.controls.keyboardRotationSpeed = 0.005; // Reduced rotation speed
+            viewer.controls.enabled = false;
+            // Disable mouse controls
+            viewer.controls.enableRotate = false;
+            viewer.controls.enableZoom = false;
+            viewer.controls.enablePan = false;
+            // Disable keyboard controls
+            viewer.controls.listenToKeyEvents = false;
         }
+
+        // Prevent any mouse wheel events on the canvas
+        viewer.renderer.domElement.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+        }, { passive: false });
+
+        // Prevent context menu on right-click
+        viewer.renderer.domElement.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+        });
+
+        // Prevent keyboard controls (arrow keys, WASD, etc.) from moving the camera
+        window.addEventListener('keydown', (e) => {
+            const cameraControlKeys = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
+                'w', 'a', 's', 'd', 'W', 'A', 'S', 'D',
+                'q', 'e', 'Q', 'E', 'r', 'f', 'R', 'F'];
+            if (cameraControlKeys.includes(e.key)) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
+        }, true);
 
 
 
@@ -1478,13 +1600,56 @@
                 console.log('=== END DEBUG INFO ===');
 
                 viewer.start();
+
+                // Nuclear camera lock - ensure controls stay disabled after start
+                viewer.controls.enabled = false;
+                viewer.controls.enableZoom = false;
+                viewer.controls.enableRotate = false;
+                viewer.controls.enablePan = false;
+
                 splatLoaded = true;
                 status.textContent = 'Scene loaded! Select a sample rug or upload your own rug image.';
 
-                // Add event listeners for rug interaction after viewer is ready
-                viewer.renderer.domElement.addEventListener('mousedown', onMouseDown);
-                viewer.renderer.domElement.addEventListener('mousemove', onMouseMove);
-                viewer.renderer.domElement.addEventListener('mouseup', onMouseUp);
+                const canvas = viewer.renderer.domElement;
+
+                // Save locked camera state
+                const lockedPosition = viewer.camera.position.clone();
+                const lockedQuaternion = viewer.camera.quaternion.clone();
+                const lockedTarget = viewer.controls.target.clone();
+
+                // Make controls.update() a no-op to prevent any control updates
+                const originalUpdate = viewer.controls.update.bind(viewer.controls);
+                viewer.controls.update = () => {
+                    // Restore locked state immediately
+                    viewer.camera.position.copy(lockedPosition);
+                    viewer.camera.quaternion.copy(lockedQuaternion);
+                    viewer.controls.target.copy(lockedTarget);
+                };
+
+                // Override camera property setters to prevent changes
+                Object.defineProperty(viewer.camera.position, 'x', {
+                    get: () => lockedPosition.x,
+                    set: () => { } // Ignore all changes
+                });
+                Object.defineProperty(viewer.camera.position, 'y', {
+                    get: () => lockedPosition.y,
+                    set: () => { }
+                });
+                Object.defineProperty(viewer.camera.position, 'z', {
+                    get: () => lockedPosition.z,
+                    set: () => { }
+                });
+
+                // Add rug interaction listeners
+                canvas.addEventListener('mousedown', onMouseDown, false);
+                canvas.addEventListener('mousemove', onMouseMove, false);
+                canvas.addEventListener('mouseup', onMouseUp, false);
+
+                // Block wheel events completely
+                canvas.addEventListener('wheel', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                }, { passive: false });
             })
             .catch(error => {
                 console.error('Error loading splat:', error);
