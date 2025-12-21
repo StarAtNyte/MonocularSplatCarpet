@@ -143,7 +143,7 @@ def map_2d_mask_to_gaussians(floor_mask_2d, original_shape, internal_shape=(1536
 
 @app.function(
     image=image,
-    gpu="T4",
+    gpu="A100",  # Upgraded from T4 for higher quality 2048x2048 processing
     volumes={CACHE_DIR: models_volume},
     timeout=600,  # 10 minutes should be enough
     container_idle_timeout=600  # Keep container alive for 5 minutes after last request
@@ -231,13 +231,13 @@ def process_image(image_bytes: bytes, render_video: bool = False):
         print("Mapping floor+rug mask to 3D Gaussians...")
         mapping_start = time.time()
 
-        # Sharp processes at 1536x1536 internal resolution with stride=2
-        # This creates a 768x768 grid of Gaussians
+        # Sharp processes at 2048x2048 internal resolution with stride=2
+        # This creates a 1024x1024 grid of Gaussians (2048/2 = 1024)
         # Sharp uses num_layers=2, so each spatial position has 2 Gaussians
         floor_gaussian_mask_single_layer = map_2d_mask_to_gaussians(
             floor_mask,
             original_shape=pil_image.size[::-1],  # (height, width)
-            internal_shape=(1536, 1536),
+            internal_shape=(2048, 2048),  # Updated from 1536 for higher quality
             stride=2
         )
 
@@ -317,7 +317,7 @@ def process_image(image_bytes: bytes, render_video: bool = False):
             "gaussian_grid_info": {
                 "total_gaussians": len(floor_gaussian_mask),
                 "num_layers": num_layers,
-                "grid_resolution": [768, 768],  # internal_shape / stride
+                "grid_resolution": [1024, 1024],  # internal_shape / stride (2048/2)
                 "floor_rug_gaussians": int(np.sum(floor_gaussian_mask))
             }
         }

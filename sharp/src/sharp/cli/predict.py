@@ -163,7 +163,7 @@ def predict_image(
     device: torch.device,
 ) -> Gaussians3D:
     """Predict Gaussians from an image."""
-    internal_shape = (1536, 1536)
+    internal_shape = (2048, 2048)  # Increased from 1536 for higher quality
 
     LOGGER.info("Running preprocessing.")
     image_pt = torch.from_numpy(image.copy()).float().to(device).permute(2, 0, 1) / 255.0

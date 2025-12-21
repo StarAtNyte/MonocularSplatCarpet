@@ -226,65 +226,6 @@
         .progressBarOuterContainer {
             display: none !important;
         }
-
-        /* Radio button styling */
-        .view-type-container {
-            margin-top: 8px;
-            margin-bottom: 8px;
-        }
-
-        .view-type-container>label {
-            display: block;
-            margin-bottom: 6px;
-            color: #ebebeb;
-            font-size: 11px;
-            font-weight: 500;
-        }
-
-        .radio-group {
-            display: flex;
-            gap: 0;
-            background: #2a2a2a;
-            border: 1px solid #3a3a3a;
-            border-radius: 4px;
-            padding: 2px;
-        }
-
-        .radio-option {
-            flex: 1;
-            position: relative;
-        }
-
-        .radio-option input[type="radio"] {
-            position: absolute;
-            opacity: 0;
-            width: 0;
-            height: 0;
-        }
-
-        .radio-label {
-            display: block;
-            padding: 6px 12px;
-            text-align: center;
-            font-size: 11px;
-            font-weight: 500;
-            color: #ababab;
-            background: transparent;
-            border-radius: 3px;
-            cursor: pointer;
-            transition: all 0.15s ease;
-            user-select: none;
-        }
-
-        .radio-option input[type="radio"]:checked+.radio-label {
-            background: #1f1f1f;
-            color: #ebebeb;
-            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-        }
-
-        .radio-label:hover {
-            color: #ebebeb;
-        }
     </style>
 </head>
 
@@ -307,20 +248,6 @@
         <div id="generateSplatContainer">
             <label>Generate Splat from Image:</label>
             <input type="file" id="generateSplatInput" accept="image/*">
-
-            <div class="view-type-container">
-                <label>Camera View Type:</label>
-                <div class="radio-group">
-                    <div class="radio-option">
-                        <input type="radio" name="viewType" value="front" id="viewFront" checked>
-                        <label for="viewFront" class="radio-label">Front View</label>
-                    </div>
-                    <div class="radio-option">
-                        <input type="radio" name="viewType" value="top" id="viewTop">
-                        <label for="viewTop" class="radio-label">Top View</label>
-                    </div>
-                </div>
-            </div>
 
             <button class="btn" id="generateSplatBtn" disabled>Generate Splat</button>
             <button class="btn" id="downloadPlyBtn" disabled style="margin-top: 8px;">Download PLY File</button>
@@ -419,6 +346,10 @@
             status.classList.add('loading');
             status.textContent = 'Uploading image to API...';
 
+            // Clear old API data before generating new splat
+            generatedSplatData = null;
+            floorMaskData = null;
+
             // Disable button and show loading state
             generateBtn.disabled = true;
             generateBtn.textContent = 'Generating...';
@@ -477,20 +408,20 @@
 
                 // Store base64 data (not decoded yet - we'll decode in chunks later)
                 generatedSplatData = result.ply;
-                floorMaskData = result.floor_mask;
+                floorMaskData = result.floor_mask_3d; // Array of booleans for each Gaussian
 
                 console.log('Response size:', receivedLength, 'bytes (', (receivedLength / 1024 / 1024).toFixed(2), 'MB)');
+                console.log('API Response Keys:', Object.keys(result));
+                console.log('floor_mask_3d type:', typeof result.floor_mask_3d);
+                console.log('floor_mask_3d is array?', Array.isArray(result.floor_mask_3d));
+                console.log('floor_mask_3d length:', result.floor_mask_3d ? result.floor_mask_3d.length : 'NULL');
+                console.log('Floor mask data stored:', floorMaskData ? `${floorMaskData.length} gaussians, ${floorMaskData.filter(Boolean).length} are floor` : 'NULL');
 
-                // Get user-selected view type
-                const viewType = document.querySelector('input[name="viewType"]:checked').value;
+                // Set floor orientation to horizontal (front view)
+                floorOrientation = 'horizontal';
 
-                // Set floor orientation based on view type
-                // Top view = camera looking down → floor is vertical plane (perpendicular to view)
-                // Front view = camera looking forward → floor is horizontal plane (ground)
-                floorOrientation = viewType === 'top' ? 'vertical' : 'horizontal';
-
-                console.log('View type:', viewType, '→ Floor orientation:', floorOrientation);
-                status.innerHTML = `<strong>View: ${viewType === 'top' ? 'Top' : 'Front'} (${floorOrientation})</strong><br>Loading splat...`;
+                console.log('Floor orientation:', floorOrientation);
+                status.innerHTML = `<strong>Loading splat...</strong>`;
 
                 // Load the generated splat
                 loadGeneratedSplat();
@@ -801,7 +732,7 @@
             return bestPlane;
         }
 
-        function ransacPlaneDetection(points, iterations = 2000, threshold = 0.05, orientation = 'horizontal') {
+        function ransacPlaneDetection(points, iterations = 2000, threshold = 0.05, orientation = 'horizontal', hasFloorMask = false) {
             const count = points.length;
             if (count < 50) return null;
 
@@ -816,6 +747,7 @@
             console.log('Coordinate system:', isInvertedY ? 'INVERTED (up=-Y)' : 'NORMAL (up=+Y)');
             console.log('Camera Y:', cameraY);
             console.log('Orientation:', orientation);
+            console.log('Has floor mask:', hasFloorMask);
 
             // FOR VERTICAL FLOORS: Create plane perpendicular to camera view (top-down)
             if (orientation === 'vertical') {
@@ -823,33 +755,43 @@
                 return detectTopDownPlane(points, cameraPos, cameraDir, threshold);
             }
 
-            // ========== NEW: Filter points to only those NEAR the camera ==========
-            // This prevents detecting noise/outliers far from the actual room
-            const maxDistanceFromCamera = 10.0; // Only consider points within 10 units of camera
-            const filteredPoints = [];
+            // ========== Spatial filtering for local splats only ==========
+            // For generated splats with floor mask, skip filtering - we already have floor points
+            // For local splats without mask, filter to prevent detecting noise/outliers far away
+            let workingPoints, workingCount;
 
-            for (let i = 0; i < count; i++) {
-                const p = points[i];
-                const dx = p.x - cameraPos.x;
-                const dy = p.y - cameraPos.y;
-                const dz = p.z - cameraPos.z;
-                const distSq = dx * dx + dy * dy + dz * dz;
+            if (hasFloorMask) {
+                // Use all provided floor points (already filtered by semantic segmentation)
+                workingPoints = points;
+                workingCount = points.length;
+                console.log(`Using all ${workingCount} floor-masked points (no spatial filtering)`);
+            } else {
+                // Filter points to only those NEAR the camera
+                const maxDistanceFromCamera = 10.0;
+                const filteredPoints = [];
 
-                if (distSq <= maxDistanceFromCamera * maxDistanceFromCamera) {
-                    filteredPoints.push(p);
+                for (let i = 0; i < count; i++) {
+                    const p = points[i];
+                    const dx = p.x - cameraPos.x;
+                    const dy = p.y - cameraPos.y;
+                    const dz = p.z - cameraPos.z;
+                    const distSq = dx * dx + dy * dy + dz * dz;
+
+                    if (distSq <= maxDistanceFromCamera * maxDistanceFromCamera) {
+                        filteredPoints.push(p);
+                    }
                 }
+
+                console.log(`Filtered points: ${filteredPoints.length} / ${count} (within ${maxDistanceFromCamera}m of camera)`);
+
+                if (filteredPoints.length < 50) {
+                    console.log('Too few points near camera after filtering');
+                    return null;
+                }
+
+                workingPoints = filteredPoints;
+                workingCount = workingPoints.length;
             }
-
-            console.log(`Filtered points: ${filteredPoints.length} / ${count} (within ${maxDistanceFromCamera}m of camera)`);
-
-            if (filteredPoints.length < 50) {
-                console.log('Too few points near camera after filtering');
-                return null;
-            }
-
-            // Use filtered points for all subsequent processing
-            const workingPoints = filteredPoints;
-            const workingCount = workingPoints.length;
             // ======================================================================
 
             // 1. Find vertical bounds (using filtered points)
@@ -1016,21 +958,45 @@
             }
             // =======================================================================
 
-            // Ensure normal points correctly
-            const sceneCenterY = (minY + maxY) / 2;
-            if (finalPlane.centroid.y > sceneCenterY) {
-                if (finalPlane.normal.y > 0) {
-                    finalPlane.normal.negate();
-                    finalPlane.d = -finalPlane.d;
-                }
-            } else {
-                if (finalPlane.normal.y < 0) {
-                    finalPlane.normal.negate();
-                    finalPlane.d = -finalPlane.d;
+            // Ensure normal points correctly (skip for floor-masked planes, we'll handle them separately)
+            if (!hasFloorMask) {
+                const sceneCenterY = (minY + maxY) / 2;
+                if (finalPlane.centroid.y > sceneCenterY) {
+                    if (finalPlane.normal.y > 0) {
+                        finalPlane.normal.negate();
+                        finalPlane.d = -finalPlane.d;
+                    }
+                } else {
+                    if (finalPlane.normal.y < 0) {
+                        finalPlane.normal.negate();
+                        finalPlane.d = -finalPlane.d;
+                    }
                 }
             }
 
-            // ADAPTIVE OFFSET CALCULATION (using filtered points)
+            // ========== FLOOR NORMAL CORRECTION FOR INVERTED SPLATS ==========
+            // For generated splats with floor mask in inverted coordinate system,
+            // flip the normal if Z component is negative to ensure correct visual orientation
+            if (hasFloorMask && orientation === 'horizontal') {
+                console.log('🔧 Floor normal check for inverted coords (AFTER normalization):');
+                console.log('  Current normal:', finalPlane.normal);
+                console.log('  Normal Z:', finalPlane.normal.z.toFixed(3));
+
+                // If normal Z is negative (pointing backward), flip the entire normal
+                if (finalPlane.normal.z < -0.2) {
+                    console.log('  ⚠️ Flipping normal for correct visual orientation');
+                    finalPlane.normal.negate();
+                    finalPlane.d = -finalPlane.d;
+                    console.log('  ✅ Corrected normal:', finalPlane.normal);
+                } else {
+                    console.log('  ✓ Normal orientation is correct');
+                }
+            }
+            // ================================================================
+
+            // ADJUST FLOOR PLANE TO TOP SURFACE
+            // Move the plane centroid upward to represent the top of the floor surface
+            // This prevents rugs from sinking into floor splats
             const floorPlane = new THREE.Plane().setFromNormalAndCoplanarPoint(
                 finalPlane.normal,
                 finalPlane.centroid
@@ -1042,27 +1008,33 @@
                 const pointVec = new THREE.Vector3(p.x, p.y, p.z);
                 const distance = floorPlane.distanceToPoint(pointVec);
 
+                // Collect points near the plane (within 20cm)
                 if (Math.abs(distance) < 0.2) {
                     nearFloorDistances.push(distance);
                 }
             }
 
-            // if (nearFloorDistances.length > 50) {
-            //     const abovePlane = nearFloorDistances.filter(d => d > 0).sort((a, b) => a - b);
+            // Calculate offset to place plane at top surface of floor
+            let surfaceOffset = 0.04; // Default 4cm offset
 
-            //     if (abovePlane.length > 10) {
-            //         const percentile75Index = Math.floor(abovePlane.length * 0.75);
-            //         const adaptiveOffset = abovePlane[percentile75Index];
-            //         finalPlane.adaptiveOffset = Math.max(0.02, Math.min(0.10, adaptiveOffset));
-            //         console.log(`Adaptive offset calculated: ${finalPlane.adaptiveOffset.toFixed(3)}m (from ${abovePlane.length} points)`);
-            //     } else {
-            //         finalPlane.adaptiveOffset = 0.035;
-            //         console.log('Using default offset: insufficient data for adaptive calculation');
-            //     }
-            // } else {
-            //     finalPlane.adaptiveOffset = 0.035;
-            //     console.log('Using default offset: insufficient near-floor points');
-            // }
+            if (nearFloorDistances.length > 50) {
+                // Use 90th percentile to find the top surface (robust to outliers)
+                const sortedDistances = nearFloorDistances.slice().sort((a, b) => a - b);
+                const percentile90Index = Math.floor(sortedDistances.length * 0.90);
+                const topSurface = sortedDistances[percentile90Index];
+
+                // Clamp to reasonable range
+                surfaceOffset = Math.max(0.02, Math.min(0.15, topSurface));
+                console.log(`Floor surface offset: ${surfaceOffset.toFixed(3)}m (90th percentile from ${nearFloorDistances.length} points)`);
+            } else {
+                console.log(`Using default surface offset: ${surfaceOffset.toFixed(3)}m (insufficient near-floor points: ${nearFloorDistances.length})`);
+            }
+
+            // Move centroid along normal to top surface
+            finalPlane.centroid.add(finalPlane.normal.clone().multiplyScalar(surfaceOffset));
+
+            // Update plane equation d value
+            finalPlane.d = -finalPlane.normal.dot(finalPlane.centroid);
 
             return finalPlane;
         }
@@ -1225,8 +1197,8 @@
             if (!detectedPlane) return;
 
             // Create a large grid plane at the detected floor position
-            const planeSize = 20; // Large plane to cover most of the scene
-            const gridDivisions = 40;
+            const planeSize = 50; // Much larger plane to cover entire floor from foreground to background
+            const gridDivisions = 100;
 
             // Create plane geometry
             const geometry = new THREE.PlaneGeometry(planeSize, planeSize, gridDivisions, gridDivisions);
@@ -1243,13 +1215,57 @@
 
             floorPlaneMesh = new THREE.Mesh(geometry, material);
 
-            // Position the plane at the detected floor centroid
-            floorPlaneMesh.position.copy(detectedPlane.centroid);
+            // SIMPLE FIX: Start from camera and move to floor along the floor normal
+            const cameraPos = viewer.camera.position.clone();
+
+            // Create a plane from the detected floor
+            const floorPlane = new THREE.Plane().setFromNormalAndCoplanarPoint(
+                detectedPlane.normal,
+                detectedPlane.centroid
+            );
+
+            // Find the closest point on the floor plane to the camera
+            // This is simply projecting the camera onto the floor plane
+            const gridPosition = new THREE.Vector3();
+            floorPlane.projectPoint(cameraPos, gridPosition);
+
+            // But clamp the position to stay within reasonable bounds of the floor centroid
+            // to prevent going too far outside the room
+            const maxDistance = 10; // Maximum 10 units from floor centroid
+            const distanceFromCentroid = gridPosition.distanceTo(detectedPlane.centroid);
+
+            if (distanceFromCentroid > maxDistance) {
+                // Too far - move back towards centroid
+                const direction = new THREE.Vector3()
+                    .subVectors(gridPosition, detectedPlane.centroid)
+                    .normalize();
+                gridPosition.copy(detectedPlane.centroid).add(direction.multiplyScalar(maxDistance));
+                console.log('Grid position clamped to stay within room bounds');
+            }
+
+            // Position grid at the calculated point
+            floorPlaneMesh.position.copy(gridPosition);
 
             // Orient the plane to match the detected floor normal
             const up = new THREE.Vector3(0, 0, 1);
             const quaternion = new THREE.Quaternion().setFromUnitVectors(up, detectedPlane.normal);
             floorPlaneMesh.quaternion.copy(quaternion);
+
+            // Apply small offset towards camera to prevent z-fighting with floor
+            const planeToCamera = new THREE.Vector3().subVectors(cameraPos, gridPosition);
+            const cameraHeight = planeToCamera.dot(detectedPlane.normal);
+            const offsetAmount = 0.01; // 1cm offset
+            const offsetDirection = Math.sign(cameraHeight);
+
+            floorPlaneMesh.position.add(
+                detectedPlane.normal.clone().multiplyScalar(offsetAmount * offsetDirection)
+            );
+
+            console.log('Floor grid visualization:');
+            console.log('  Floor centroid:', detectedPlane.centroid);
+            console.log('  Camera position:', cameraPos);
+            console.log('  Grid position (below camera):', gridPosition);
+            console.log('  Distance from centroid:', distanceFromCentroid.toFixed(2));
 
             // Start hidden
             floorPlaneMesh.visible = floorPlaneVisible;
@@ -1305,11 +1321,6 @@
             // Adjust Y to be at camera level (for wall-mounted items like art)
             position.y = cameraPos.y;
 
-            // For vertical/top-down views: apply automatic Z offset of -0.15
-            const autoZOffset = -0.04;
-            position.z += autoZOffset;
-            console.log('Applied automatic Z offset for vertical plane:', autoZOffset);
-
             // Apply manual X, Y, and Z offsets
             position.x += rugParams.offsetX;
             position.y += rugParams.offsetY;
@@ -1341,11 +1352,20 @@
 
                 position = plane.centroid.clone();
 
-                // Add small offset along floor normal to place rug slightly above the grid
-                const rugHeightOffset = 0.001; // 0.1cm above the detected floor plane
-                position.add(plane.normal.clone().multiplyScalar(rugHeightOffset));
+                // Offset rug slightly above the detected top surface
+                // Since the plane is already at the top surface, we only need a tiny offset
+                const rugOffset = 0.005; // 5mm above the top surface to prevent z-fighting
 
-                console.log('Placing rug at floor centroid:', position);
+                // Check if normal points towards camera or away
+                const planeToCamera = new THREE.Vector3().subVectors(cameraPos, position);
+                const normalDotCamera = plane.normal.dot(planeToCamera);
+
+                // If normal points away from camera, flip the offset direction
+                const offsetDirection = normalDotCamera > 0 ? 1 : -1;
+                position.add(plane.normal.clone().multiplyScalar(rugOffset * offsetDirection));
+
+                console.log('Normal dot camera:', normalDotCamera.toFixed(3), '→ offset direction:', offsetDirection);
+                console.log('Placing rug at floor top surface with offset:', rugOffset * offsetDirection);
             } else {
                 // FOR LOCAL SPLATS: Use complex camera-based placement
                 console.log('Local splat detected - using camera-based placement');
@@ -1777,10 +1797,9 @@
             status.style.display = 'block';
             status.textContent = 'Detecting floor...';
 
-            // Get user-selected view type from radio buttons
-            const viewType = document.querySelector('input[name="viewType"]:checked').value;
-            floorOrientation = viewType === 'top' ? 'vertical' : 'horizontal';
-            console.log('Floor detection using view type:', viewType, '→ orientation:', floorOrientation);
+            // Set floor orientation to horizontal (front view)
+            floorOrientation = 'horizontal';
+            console.log('Floor detection using orientation:', floorOrientation);
 
             await new Promise(resolve => requestAnimationFrame(resolve));
 
@@ -1790,32 +1809,64 @@
 
                 const splatCount = splatMesh.getSplatCount();
 
-                const targetSampleCount = 20000;
-                const step = Math.max(1, Math.floor(splatCount / targetSampleCount));
+                // Check if we have floor mask from API (generated splats)
+                const hasFloorMask = floorMaskData && floorMaskData.length > 0;
+                console.log('=== FLOOR DETECTION DEBUG ===');
+                console.log('floorMaskData:', floorMaskData);
+                console.log('floorMaskData type:', typeof floorMaskData);
+                console.log('floorMaskData is array?', Array.isArray(floorMaskData));
+                console.log('floorMaskData length:', floorMaskData ? floorMaskData.length : 'NULL');
+                console.log('Floor mask available:', hasFloorMask, hasFloorMask ? `(${floorMaskData.length} gaussians)` : '');
+                console.log('generatedSplatData exists?', generatedSplatData ? 'YES' : 'NO');
+                console.log('===========================');
 
+                const targetSampleCount = 20000;
                 const points = [];
                 const center = new THREE.Vector3();
 
-                for (let i = 0; i < splatCount; i += step) {
-                    splatMesh.getSplatCenter(i, center);
-                    points.push({ x: center.x, y: center.y, z: center.z });
+                if (hasFloorMask) {
+                    // For generated splats: Use floor mask to sample ONLY floor Gaussians
+                    // This gives us accurate floor points across the entire scene (near and far)
+                    let floorGaussianCount = 0;
+                    for (let i = 0; i < Math.min(splatCount, floorMaskData.length); i++) {
+                        if (floorMaskData[i]) {
+                            floorGaussianCount++;
+                        }
+                    }
+
+                    const step = Math.max(1, Math.floor(floorGaussianCount / targetSampleCount));
+                    let floorIndex = 0;
+
+                    for (let i = 0; i < Math.min(splatCount, floorMaskData.length); i++) {
+                        if (floorMaskData[i]) {
+                            if (floorIndex % step === 0) {
+                                splatMesh.getSplatCenter(i, center);
+                                points.push({ x: center.x, y: center.y, z: center.z });
+                            }
+                            floorIndex++;
+                        }
+                    }
+
+                    console.log(`Sampled ${points.length} floor points from ${floorGaussianCount} floor Gaussians`);
+                } else {
+                    // For local splats: Sample all Gaussians (will use spatial filtering in RANSAC)
+                    const step = Math.max(1, Math.floor(splatCount / targetSampleCount));
+                    for (let i = 0; i < splatCount; i += step) {
+                        splatMesh.getSplatCenter(i, center);
+                        points.push({ x: center.x, y: center.y, z: center.z });
+                    }
                 }
 
-                status.textContent = `Analyzing ${points.length.toLocaleString()} points...`;
+                status.textContent = `Analyzing ${points.length.toLocaleString()} ${hasFloorMask ? 'floor ' : ''}points...`;
 
                 await new Promise(resolve => setTimeout(resolve, 10));
 
                 // Use the detected floor orientation (from API mask analysis)
-                const plane = ransacPlaneDetection(points, 2000, 0.05, floorOrientation);
+                // Pass hasFloorMask flag to disable spatial filtering for generated splats
+                const plane = ransacPlaneDetection(points, 2000, 0.05, floorOrientation, hasFloorMask);
 
                 if (plane) {
-                    // MONOCULAR SPLAT FIX: Use adaptive offset based on point distribution
-                    // This compensates for density bias where the detected plane tends
-                    // to be below the visual floor surface due to sparse edges
-                    const upwardOffset = plane.adaptiveOffset || 0.035; // Use calculated or fallback to 3.5cm
-                    plane.centroid.add(plane.normal.clone().multiplyScalar(upwardOffset));
-
-                    console.log(`Applied adaptive floor offset: ${upwardOffset.toFixed(3)}m`);
+                    // No offset - use plane centroid directly
                     console.log(`Floor plane centroid:`, plane.centroid);
                     console.log(`Floor plane normal:`, plane.normal);
                     console.log(`Camera position:`, viewer.camera.position);
@@ -1824,14 +1875,13 @@
                     createFloorPlaneVisualization();
 
                     // Keep floor plane hidden (rug will still work on the invisible plane)
-                    floorPlaneVisible = false;
+                    floorPlaneVisible = true;
                     if (floorPlaneMesh) {
-                        floorPlaneMesh.visible = false;
+                        floorPlaneMesh.visible = true;
                     }
 
                     status.innerHTML = `<strong>Floor Detected!</strong><br>
                         Height: ${plane.centroid.y.toFixed(2)}<br>
-                        Offset: ${upwardOffset.toFixed(3)}m<br>
                         Camera Y: ${viewer.camera.position.y.toFixed(2)}<br>
                         Ready to place rug!`;
                     return true;
@@ -2004,7 +2054,7 @@
             }
         }
 
-        function cleanupScene() {
+        function cleanupScene(clearApiData = false) {
             // Remove current rug and its gizmos
             removeCurrentRug();
 
@@ -2019,6 +2069,12 @@
 
             // Clear detected plane
             detectedPlane = null;
+
+            // Only clear API data when switching to a different splat (not when loading generated splat)
+            if (clearApiData) {
+                floorMaskData = null;
+                generatedSplatData = null;
+            }
 
             // Clear custom rug texture
             customRugTexture = null;
@@ -2046,8 +2102,8 @@
             status.textContent = 'Loading new scene...';
 
             try {
-                // Cleanup old scene
-                cleanupScene();
+                // Cleanup old scene and clear API data (switching to local splat)
+                cleanupScene(true);
 
                 // Remove old splat scene
                 if (viewer.splatMesh) {
