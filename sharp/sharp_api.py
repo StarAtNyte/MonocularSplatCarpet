@@ -1,4 +1,3 @@
-
 import modal
 import os
 import shutil
@@ -243,10 +242,14 @@ def process_image(image_bytes: bytes, render_video: bool = False):
         )
 
         # Replicate for both layers (Sharp uses 2 layers by default)
-        # Gaussians are ordered as: [layer0_gaussians, layer1_gaussians]
-        # Each layer has 768*768 gaussians
+        # CRITICAL FIX: Gaussians are interleaved by layer, not concatenated
+        # Each spatial position (i, j) has num_layers Gaussians:
+        # [pos_0_layer_0, pos_0_layer_1, pos_1_layer_0, pos_1_layer_1, ...]
+        # NOT: [all_layer_0, all_layer_1]
         num_layers = 2
-        floor_gaussian_mask = np.tile(floor_gaussian_mask_single_layer, num_layers)
+        
+        # Interleave the mask: repeat each element num_layers times
+        floor_gaussian_mask = np.repeat(floor_gaussian_mask_single_layer, num_layers)
 
         mapping_end = time.time()
         print(f"⏱️ Floor+Rug-to-Gaussian mapping time: {mapping_end - mapping_start:.2f}s")
