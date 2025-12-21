@@ -487,11 +487,16 @@
                 viewer.start();
                 splatLoaded = true;
 
+                // DEBUGGING: Camera enabled
                 // Camera lock
-                viewer.controls.enabled = false;
-                viewer.controls.enableZoom = false;
-                viewer.controls.enableRotate = false;
-                viewer.controls.enablePan = false;
+                // viewer.controls.enabled = false;
+                // viewer.controls.enableZoom = false;
+                // viewer.controls.enableRotate = false;
+                // viewer.controls.enablePan = false;
+                viewer.controls.enabled = true;
+                viewer.controls.enableZoom = true;
+                viewer.controls.enableRotate = true;
+                viewer.controls.enablePan = true;
 
                 status.classList.remove('loading');
                 status.innerHTML = '<strong>Splat loaded successfully!</strong><br>Select a rug to place on the detected floor.';
@@ -755,43 +760,43 @@
                 return detectTopDownPlane(points, cameraPos, cameraDir, threshold);
             }
 
-            // ========== Spatial filtering for local splats only ==========
-            // For generated splats with floor mask, skip filtering - we already have floor points
-            // For local splats without mask, filter to prevent detecting noise/outliers far away
+            // ========== Spatial filtering to focus on visible floor area ==========
+            // IMPORTANT: Even with floor mask, we need to filter to nearby points
+            // The floor mask includes the entire floor (even far away areas at 97m!)
+            // We want to detect the floor plane in the VISIBLE area near the camera
             let workingPoints, workingCount;
 
-            if (hasFloorMask) {
-                // Use all provided floor points (already filtered by semantic segmentation)
-                workingPoints = points;
-                workingCount = points.length;
-                console.log(`Using all ${workingCount} floor-masked points (no spatial filtering)`);
-            } else {
-                // Filter points to only those NEAR the camera
-                const maxDistanceFromCamera = 10.0;
-                const filteredPoints = [];
+            // ALWAYS filter to nearby points (even with floor mask)
+            const maxDistanceFromCamera = 10.0; // Only consider floor within 10m of camera
+            const filteredPoints = [];
 
-                for (let i = 0; i < count; i++) {
-                    const p = points[i];
-                    const dx = p.x - cameraPos.x;
-                    const dy = p.y - cameraPos.y;
-                    const dz = p.z - cameraPos.z;
-                    const distSq = dx * dx + dy * dy + dz * dz;
+            for (let i = 0; i < count; i++) {
+                const p = points[i];
+                const dx = p.x - cameraPos.x;
+                const dy = p.y - cameraPos.y;
+                const dz = p.z - cameraPos.z;
+                const distSq = dx * dx + dy * dy + dz * dz;
 
-                    if (distSq <= maxDistanceFromCamera * maxDistanceFromCamera) {
-                        filteredPoints.push(p);
-                    }
+                if (distSq <= maxDistanceFromCamera * maxDistanceFromCamera) {
+                    filteredPoints.push(p);
                 }
-
-                console.log(`Filtered points: ${filteredPoints.length} / ${count} (within ${maxDistanceFromCamera}m of camera)`);
-
-                if (filteredPoints.length < 50) {
-                    console.log('Too few points near camera after filtering');
-                    return null;
-                }
-
-                workingPoints = filteredPoints;
-                workingCount = workingPoints.length;
             }
+
+            console.log(`Filtered to nearby floor points: ${filteredPoints.length} / ${count} (within ${maxDistanceFromCamera}m of camera)`);
+
+            if (hasFloorMask) {
+                console.log(`✓ Using floor mask + spatial filtering (nearby floor points only)`);
+            } else {
+                console.log(`✓ Using spatial filtering (no floor mask available)`);
+            }
+
+            if (filteredPoints.length < 50) {
+                console.log('Too few points near camera after filtering');
+                return null;
+            }
+
+            workingPoints = filteredPoints;
+            workingCount = workingPoints.length;
             // ======================================================================
 
             // 1. Find vertical bounds (using filtered points)
@@ -1209,63 +1214,45 @@
                 wireframe: true,
                 transparent: true,
                 opacity: 0.15,
-                depthTest: true,
+                depthTest: false, // CRITICAL: Disable depth test so grid always renders on top
                 side: THREE.DoubleSide
             });
 
             floorPlaneMesh = new THREE.Mesh(geometry, material);
 
-            // SIMPLE FIX: Start from camera and move to floor along the floor normal
-            const cameraPos = viewer.camera.position.clone();
-
-            // Create a plane from the detected floor
-            const floorPlane = new THREE.Plane().setFromNormalAndCoplanarPoint(
-                detectedPlane.normal,
-                detectedPlane.centroid
-            );
-
-            // Find the closest point on the floor plane to the camera
-            // This is simply projecting the camera onto the floor plane
-            const gridPosition = new THREE.Vector3();
-            floorPlane.projectPoint(cameraPos, gridPosition);
-
-            // But clamp the position to stay within reasonable bounds of the floor centroid
-            // to prevent going too far outside the room
-            const maxDistance = 10; // Maximum 10 units from floor centroid
-            const distanceFromCentroid = gridPosition.distanceTo(detectedPlane.centroid);
-
-            if (distanceFromCentroid > maxDistance) {
-                // Too far - move back towards centroid
-                const direction = new THREE.Vector3()
-                    .subVectors(gridPosition, detectedPlane.centroid)
-                    .normalize();
-                gridPosition.copy(detectedPlane.centroid).add(direction.multiplyScalar(maxDistance));
-                console.log('Grid position clamped to stay within room bounds');
-            }
-
-            // Position grid at the calculated point
-            floorPlaneMesh.position.copy(gridPosition);
+            // Position the plane at the detected floor centroid
+            floorPlaneMesh.position.copy(detectedPlane.centroid);
 
             // Orient the plane to match the detected floor normal
             const up = new THREE.Vector3(0, 0, 1);
             const quaternion = new THREE.Quaternion().setFromUnitVectors(up, detectedPlane.normal);
             floorPlaneMesh.quaternion.copy(quaternion);
 
-            // Apply small offset towards camera to prevent z-fighting with floor
-            const planeToCamera = new THREE.Vector3().subVectors(cameraPos, gridPosition);
-            const cameraHeight = planeToCamera.dot(detectedPlane.normal);
-            const offsetAmount = 0.01; // 1cm offset
-            const offsetDirection = Math.sign(cameraHeight);
+            // Offset the grid slightly towards the camera to ensure visibility at all angles
+            // This prevents the grid from being hidden inside the floor geometry
+            const cameraPos = viewer.camera.position.clone();
+            const planeToCamera = new THREE.Vector3().subVectors(cameraPos, detectedPlane.centroid);
+
+            // Calculate offset based on camera angle relative to floor normal
+            const normalDotCamera = detectedPlane.normal.dot(planeToCamera.normalize());
+
+            // Move grid slightly towards camera along the floor normal
+            // For worm's eye view (camera below, normal points up): normalDotCamera > 0, offset upward
+            // For bird's eye view (camera above, normal points down): normalDotCamera < 0, offset downward
+            const offsetAmount = 0.0005; // 5cm offset to prevent z-fighting
+            const offsetDirection = Math.sign(normalDotCamera);
 
             floorPlaneMesh.position.add(
                 detectedPlane.normal.clone().multiplyScalar(offsetAmount * offsetDirection)
             );
 
             console.log('Floor grid visualization:');
-            console.log('  Floor centroid:', detectedPlane.centroid);
+            console.log('  Centroid:', detectedPlane.centroid);
+            console.log('  Normal:', detectedPlane.normal);
             console.log('  Camera position:', cameraPos);
-            console.log('  Grid position (below camera):', gridPosition);
-            console.log('  Distance from centroid:', distanceFromCentroid.toFixed(2));
+            console.log('  Normal dot camera direction:', normalDotCamera.toFixed(3));
+            console.log('  Grid offset direction:', offsetDirection, '(towards camera)');
+            console.log('  Final grid position:', floorPlaneMesh.position);
 
             // Start hidden
             floorPlaneMesh.visible = floorPlaneVisible;
@@ -1567,7 +1554,8 @@
                 // Store initial distance between corners
                 initialDistance = oppositeCornerWorld.distanceTo(draggedCornerWorld);
 
-                viewer.controls.enabled = false;
+                // DEBUGGING: Keep controls enabled
+                // viewer.controls.enabled = false;
                 viewer.renderer.domElement.style.cursor = 'nwse-resize';
                 event.preventDefault();
                 return;
@@ -1579,7 +1567,8 @@
                 isDragging = false;
                 isResizing = false;
                 previousMouse = { x: event.clientX, y: event.clientY };
-                viewer.controls.enabled = false;
+                // DEBUGGING: Keep controls enabled
+                // viewer.controls.enabled = false;
                 viewer.renderer.domElement.style.cursor = 'grabbing';
                 event.preventDefault();
                 return;
@@ -1616,7 +1605,8 @@
                     offset.copy(intersect.point).sub(rug.position);
                 }
 
-                viewer.controls.enabled = false;
+                // DEBUGGING: Keep controls enabled
+                // viewer.controls.enabled = false;
                 viewer.renderer.domElement.style.cursor = 'grabbing';
                 event.preventDefault();
             }
@@ -1760,7 +1750,8 @@
                 oppositeCornerWorld = null;
                 draggedCornerWorld = null;
                 initialRugCenter = null;
-                viewer.controls.enabled = false; // Keep controls disabled to lock camera
+                // DEBUGGING: Keep controls enabled
+                // viewer.controls.enabled = false; // Keep controls disabled to lock camera
                 viewer.renderer.domElement.style.cursor = 'default';
                 event.preventDefault();
             }
@@ -2175,22 +2166,30 @@
             selfDrivenMode: true
         });
 
+        // DEBUGGING: Enable camera controls
         // Disable ALL camera controls to fix camera at initial position
         if (viewer.controls) {
-            viewer.controls.enabled = false;
+            // viewer.controls.enabled = false;
             // Disable mouse controls
-            viewer.controls.enableRotate = false;
-            viewer.controls.enableZoom = false;
-            viewer.controls.enablePan = false;
+            // viewer.controls.enableRotate = false;
+            // viewer.controls.enableZoom = false;
+            // viewer.controls.enablePan = false;
             // Disable keyboard controls
-            viewer.controls.listenToKeyEvents = false;
+            // viewer.controls.listenToKeyEvents = false;
+            viewer.controls.enabled = true;
+            viewer.controls.enableRotate = true;
+            viewer.controls.enableZoom = true;
+            viewer.controls.enablePan = true;
         }
 
+        // DEBUGGING: Allow wheel events
         // Prevent any mouse wheel events on the canvas
+        /*
         viewer.renderer.domElement.addEventListener('wheel', (e) => {
             e.preventDefault();
             e.stopPropagation();
         }, { passive: false });
+        */
 
         // Prevent context menu on right-click
         viewer.renderer.domElement.addEventListener('contextmenu', (e) => {
@@ -2412,17 +2411,29 @@
 
                 viewer.start();
 
+                // DEBUGGING: Camera controls ENABLED for testing
+                // Comment these lines out to allow free camera movement
+                /*
                 // Nuclear camera lock - ensure controls stay disabled after start
                 viewer.controls.enabled = false;
                 viewer.controls.enableZoom = false;
                 viewer.controls.enableRotate = false;
                 viewer.controls.enablePan = false;
+                */
+
+                // DEBUGGING: Enable camera controls
+                viewer.controls.enabled = true;
+                viewer.controls.enableZoom = true;
+                viewer.controls.enableRotate = true;
+                viewer.controls.enablePan = true;
 
                 splatLoaded = true;
                 status.textContent = 'Scene loaded! Select a sample rug or upload your own rug image.';
 
                 const canvas = viewer.renderer.domElement;
 
+                // DEBUGGING: Comment out camera lock code
+                /*
                 // Save locked camera state
                 const lockedPosition = viewer.camera.position.clone();
                 const lockedQuaternion = viewer.camera.quaternion.clone();
@@ -2450,17 +2461,21 @@
                     get: () => lockedPosition.z,
                     set: () => { }
                 });
+                */
 
                 // Add rug interaction listeners
                 canvas.addEventListener('mousedown', onMouseDown, false);
                 canvas.addEventListener('mousemove', onMouseMove, false);
                 canvas.addEventListener('mouseup', onMouseUp, false);
 
+                // DEBUGGING: Allow wheel zoom
+                /*
                 // Block wheel events completely
                 canvas.addEventListener('wheel', (e) => {
                     e.preventDefault();
                     e.stopPropagation();
                 }, { passive: false });
+                */
             })
             .catch(error => {
                 console.error('Error loading splat:', error);
