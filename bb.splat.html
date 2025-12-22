@@ -1961,8 +1961,13 @@
                     const plane = fitPlaneToFloorGaussians(floorPositions);
 
                     if (plane) {
-                        // Use centroid directly without any offset
-                        console.log(`Floor centroid (no offset):`, plane.centroid);
+                        // Apply small offset above the floor (0.02 units toward camera)
+                        const smallOffset = 0.015;
+                        plane.centroid.add(plane.normal.clone().multiplyScalar(smallOffset));
+                        plane.d = -plane.normal.dot(plane.centroid);
+
+                        console.log(`Floor offset: ${smallOffset.toFixed(3)}m above surface`);
+                        console.log(`Final floor centroid:`, plane.centroid);
                         console.log(`Floor normal:`, plane.normal);
 
                         detectedPlane = plane;
