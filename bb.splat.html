@@ -231,16 +231,16 @@
         #wallDecorSidebar, #rugSidebar {
             position: fixed;
             top: 0;
-            right: -400px;
-            width: 400px;
+            right: -280px;
+            width: 280px;
             height: 100vh;
             background: rgba(31, 31, 31, 0.95);
             border-left: 1px solid #3a3a3a;
             z-index: 2000;
             transition: right 0.3s ease;
-            overflow-y: auto;
-            padding: 20px;
             backdrop-filter: blur(10px);
+            display: flex;
+            flex-direction: column;
         }
 
         #wallDecorSidebar.open, #rugSidebar.open {
@@ -251,9 +251,9 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 20px;
-            padding-bottom: 12px;
+            padding: 20px 20px 12px 20px;
             border-bottom: 1px solid #3a3a3a;
+            flex-shrink: 0;
         }
 
         #wallDecorSidebar .sidebar-header h2, #rugSidebar .sidebar-header h2 {
@@ -287,6 +287,47 @@
             display: grid;
             grid-template-columns: 1fr;
             gap: 12px;
+            padding: 20px;
+            overflow-y: auto;
+            flex: 1;
+        }
+
+        /* Sticky Upload Button */
+        .upload-custom-btn {
+            position: sticky;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            padding: 16px 20px;
+            background: rgba(26, 26, 26, 0.98);
+            border-top: 1px solid #3a3a3a;
+            cursor: pointer;
+            transition: background 0.2s ease;
+            flex-shrink: 0;
+            backdrop-filter: blur(10px);
+        }
+
+        .upload-custom-btn:hover {
+            background: rgba(42, 42, 42, 0.98);
+        }
+
+        .upload-custom-btn input[type="file"] {
+            display: none;
+        }
+
+        .upload-custom-btn span {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #4a90e2;
+            font-weight: 500;
+            font-size: 14px;
+            gap: 8px;
+        }
+
+        .upload-custom-btn span:before {
+            content: '📁';
+            font-size: 18px;
         }
 
         .wall-decor-item, .rug-item {
@@ -489,6 +530,8 @@
         let detectedWallPlane = null;
         let detectedWalls = []; // Array of wall objects: {plane, positions, color, bounds}
         let wallDecorGui = null;
+        let wallGaussianPositions = []; // All wall gaussian positions from API
+        let wallGaussianBounds = null; // Bounds of all wall gaussians
 
         const wallDecorParams = {
             visible: true,
@@ -1706,9 +1749,30 @@
 
                 raycaster.setFromCamera(mouse, viewer.camera);
 
-                // Create plane at wall decor position (like rug dragging)
+                // Calculate wall normal from wall gaussians
+                let wallNormal;
+                if (wallGaussianPositions.length > 0) {
+                    const wallCenter = new THREE.Vector3();
+                    for (const pos of wallGaussianPositions) {
+                        wallCenter.add(pos);
+                    }
+                    wallCenter.divideScalar(wallGaussianPositions.length);
+
+                    wallNormal = new THREE.Vector3()
+                        .subVectors(viewer.camera.position, wallCenter)
+                        .normalize();
+                    wallNormal.y = 0; // Keep horizontal for vertical walls
+                    wallNormal.normalize();
+                } else if (detectedWallPlane) {
+                    wallNormal = detectedWallPlane.normal;
+                } else {
+                    // Fallback: use camera forward direction
+                    wallNormal = new THREE.Vector3(0, 0, 1);
+                }
+
+                // Create plane at wall decor position
                 const wallPlane = new THREE.Plane();
-                wallPlane.setFromNormalAndCoplanarPoint(detectedWallPlane.normal, wallDecor.position);
+                wallPlane.setFromNormalAndCoplanarPoint(wallNormal, wallDecor.position);
 
                 const wallPoint = new THREE.Vector3();
                 raycaster.ray.intersectPlane(wallPlane, wallPoint);
@@ -1725,28 +1789,7 @@
                 return;
             }
 
-            // If not clicking on wall decor, check if clicking on a wall to switch to it
-            const clickedWall = findClickedWall(event);
-            if (clickedWall && wallDecor) {
-                // Switch wall decor to the clicked wall
-                detectedWallPlane = clickedWall.wall.plane;
-
-                // Reset offsets for new wall
-                wallDecorParams.offsetX = 0;
-                wallDecorParams.offsetY = 0;
-                wallDecorParams.offsetZ = 0.02;
-
-                placeWallDecorOnWall();
-
-                if (wallDecorGui) {
-                    wallDecorGui.controllersRecursive().forEach(controller => controller.updateDisplay());
-                }
-
-                const status = document.getElementById('status');
-                status.textContent = `Wall decor moved to Wall ${clickedWall.wall.id}`;
-                status.style.display = 'block';
-                setTimeout(() => status.style.display = 'none', 2000);
-            }
+            // Wall switching removed - single unified wall surface
         }
 
         function onMouseDown(event) {
@@ -1839,6 +1882,11 @@
 
         function handleWallDecorMouseMove(event) {
             if (isDragging) {
+                if (wallGaussianPositions.length === 0 || !wallGaussianBounds) {
+                    console.warn('No wall gaussians available for dragging');
+                    return;
+                }
+
                 const rect = viewer.renderer.domElement.getBoundingClientRect();
                 const mouse = new THREE.Vector2();
                 mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
@@ -1846,24 +1894,43 @@
 
                 raycaster.setFromCamera(mouse, viewer.camera);
 
-                // Create plane at wallDecor's current position (same as rug dragging)
-                const wallPlane = new THREE.Plane();
-                wallPlane.setFromNormalAndCoplanarPoint(detectedWallPlane.normal, wallDecor.position);
+                // Calculate wall center
+                const wallCenter = new THREE.Vector3();
+                for (const pos of wallGaussianPositions) {
+                    wallCenter.add(pos);
+                }
+                wallCenter.divideScalar(wallGaussianPositions.length);
+
+                // Get proper wall normal (perpendicular to wall surface)
+                const plane = fitPlaneToWallGaussians(wallGaussianPositions, viewer.camera.position);
+                const wallNormal = plane.normal.clone();
+
+                // Ensure normal points toward camera
+                const camToWall = new THREE.Vector3().subVectors(wallCenter, viewer.camera.position);
+                if (wallNormal.dot(camToWall) > 0) {
+                    wallNormal.negate();
+                }
+
+                // Create drag plane using the wall normal
+                const dragPlane = new THREE.Plane();
+                dragPlane.setFromNormalAndCoplanarPoint(wallNormal, wallDecor.position);
 
                 const mouseWorldPos = new THREE.Vector3();
-                const intersected = raycaster.ray.intersectPlane(wallPlane, mouseWorldPos);
+                const intersected = raycaster.ray.intersectPlane(dragPlane, mouseWorldPos);
 
                 if (intersected && mouseWorldPos) {
-                    const newPos = mouseWorldPos.clone().sub(offset);
+                    let newPos = mouseWorldPos.clone().sub(offset);
+
+                    // Clamp to wall gaussian bounds
+                    newPos.clamp(wallGaussianBounds.min, wallGaussianBounds.max);
 
                     // Update wall decor position
                     wallDecor.position.copy(newPos);
 
-                    // Update the offset params to match
-                    const initialPos = detectedWallPlane.centroid.clone();
-                    wallDecorParams.offsetX = newPos.x - initialPos.x;
-                    wallDecorParams.offsetY = newPos.y - initialPos.y;
-                    wallDecorParams.offsetZ = newPos.z - initialPos.z;
+                    // Update the offset params relative to wall center
+                    wallDecorParams.offsetX = newPos.x - wallCenter.x;
+                    wallDecorParams.offsetY = newPos.y - wallCenter.y;
+                    wallDecorParams.offsetZ = newPos.z - wallCenter.z;
 
                     if (wallDecorGui) {
                         wallDecorGui.controllersRecursive().forEach(controller => controller.updateDisplay());
@@ -2200,7 +2267,7 @@
                 placeWallDecorOnWall();
 
                 setupWallDecorGUI();
-                status.textContent = 'Wall decor placed! Drag to move, click walls to switch.';
+                status.textContent = 'Wall decor placed! Drag to move.';
 
                 // Close sidebar after selection
                 document.getElementById('wallDecorSidebar').classList.remove('open');
@@ -2247,6 +2314,60 @@
             });
         }
 
+        /**
+         * Collect all wall gaussian positions directly from API wall mask data
+         * This is simpler than clustering - just get all positions marked as walls
+         */
+        function collectWallGaussians() {
+            if (!wallMaskData || !viewer.splatMesh) {
+                console.warn('No wall mask data or splat mesh available');
+                return false;
+            }
+
+            const splatMesh = viewer.splatMesh;
+            const splatCount = splatMesh.getSplatCount();
+            const positions = [];
+            const center = new THREE.Vector3();
+
+            console.log('=== COLLECTING WALL GAUSSIANS ===');
+
+            // Collect all wall gaussian positions
+            for (let i = 0; i < Math.min(wallMaskData.length, splatCount); i++) {
+                if (wallMaskData[i]) {
+                    splatMesh.getSplatCenter(i, center);
+                    positions.push(center.clone());
+                }
+            }
+
+            console.log(`Found ${positions.length} wall gaussians from API`);
+
+            if (positions.length < 10) {
+                console.warn('Not enough wall gaussians');
+                return false;
+            }
+
+            // Calculate bounds
+            const bounds = {
+                min: new THREE.Vector3(Infinity, Infinity, Infinity),
+                max: new THREE.Vector3(-Infinity, -Infinity, -Infinity)
+            };
+
+            for (const pos of positions) {
+                bounds.min.min(pos);
+                bounds.max.max(pos);
+            }
+
+            wallGaussianPositions = positions;
+            wallGaussianBounds = bounds;
+
+            console.log('Wall bounds:', bounds);
+            console.log('  X:', bounds.min.x.toFixed(2), 'to', bounds.max.x.toFixed(2));
+            console.log('  Y:', bounds.min.y.toFixed(2), 'to', bounds.max.y.toFixed(2));
+            console.log('  Z:', bounds.min.z.toFixed(2), 'to', bounds.max.z.toFixed(2));
+
+            return true;
+        }
+
         async function detectWall() {
             const status = document.getElementById('status');
 
@@ -2263,27 +2384,21 @@
 
                 // Check if we have wall mask data from API
                 if (wallMaskData && Array.isArray(wallMaskData)) {
-                    console.log('=== USING WALL MASK FOR MULTI-WALL DETECTION ===');
-                    status.textContent = 'Clustering walls from API mask...';
+                    console.log('=== USING WALL MASK DATA FROM API ===');
+                    status.textContent = 'Loading wall gaussians from API...';
 
-                    // Cluster all walls if not already done
-                    if (detectedWalls.length === 0) {
-                        detectedWalls = clusterWallsFromGaussians(wallMaskData, splatMesh);
-                    }
+                    // Simply collect all wall gaussians - no clustering needed!
+                    const collected = collectWallGaussians();
 
-                    if (detectedWalls.length === 0) {
-                        status.textContent = 'No walls detected! Try adjusting clustering parameters.';
+                    if (!collected) {
+                        status.textContent = 'No wall gaussians found in API data!';
                         return false;
                     }
 
-                    console.log(`Found ${detectedWalls.length} walls`);
+                    console.log(`✅ Loaded ${wallGaussianPositions.length} wall gaussians`);
 
-                    // Set the first wall as the default detectedWallPlane for backward compatibility
-                    // (This will be overridden during placement when user clicks)
-                    detectedWallPlane = detectedWalls[0].plane;
-
-                    status.innerHTML = `<strong>${detectedWalls.length} Walls Detected!</strong><br>
-                        Click any wall to place decor!`;
+                    status.innerHTML = `<strong>Wall Loaded!</strong><br>
+                        ${wallGaussianPositions.length.toLocaleString()} gaussians detected`;
                     return true;
                 }
 
@@ -2650,34 +2765,52 @@
         function placeWallDecorOnWall() {
             if (!wallDecor) return;
 
-            // If we have multiple walls detected, use the first one as default
-            // (User can later click to place on specific walls)
-            let plane = detectedWallPlane;
-
-            if (detectedWalls.length > 0 && !plane) {
-                plane = detectedWalls[0].plane;
-                detectedWallPlane = plane;
+            // Collect wall gaussians from API if not already done
+            if (wallGaussianPositions.length === 0 && wallMaskData) {
+                const collected = collectWallGaussians();
+                if (!collected) {
+                    console.error('Failed to collect wall gaussians');
+                    return;
+                }
             }
 
-            if (!plane) return;
+            if (wallGaussianPositions.length === 0) {
+                console.error('No wall gaussians available');
+                return;
+            }
 
             const cameraPos = viewer.camera.position.clone();
 
-            // Place decor at wall centroid, at camera eye level
-            let position = plane.centroid.clone();
+            // Calculate center of all wall gaussians
+            const wallCenter = new THREE.Vector3();
+            for (const pos of wallGaussianPositions) {
+                wallCenter.add(pos);
+            }
+            wallCenter.divideScalar(wallGaussianPositions.length);
 
-            // Set Y to camera level (eye level)
+            // Start at wall center
+            let position = wallCenter.clone();
+
+            // Set Y to camera level (eye level) for better viewing
             position.y = cameraPos.y;
 
-            // Project the position back onto the wall plane to ensure it's on the surface
-            // Calculate the point on the plane closest to our desired position
-            const vecFromCentroid = new THREE.Vector3().subVectors(position, plane.centroid);
-            const distanceAlongNormal = vecFromCentroid.dot(plane.normal);
-            position.sub(plane.normal.clone().multiplyScalar(distanceAlongNormal));
+            // Clamp position to wall bounds
+            if (wallGaussianBounds) {
+                position.clamp(wallGaussianBounds.min, wallGaussianBounds.max);
+            }
 
-            // Offset slightly toward the camera (0.01 units into the room)
-            // This prevents z-fighting with the wall surface
-            position.add(plane.normal.clone().multiplyScalar(0.01));
+            // Calculate proper wall normal using PCA on wall gaussians
+            // This gives us the perpendicular vector to the wall surface
+            const plane = fitPlaneToWallGaussians(wallGaussianPositions, cameraPos);
+            const wallNormal = plane.normal.clone();
+
+            // Ensure normal points toward camera (for correct decor orientation)
+            const camToWall = new THREE.Vector3().subVectors(wallCenter, cameraPos);
+            if (wallNormal.dot(camToWall) > 0) {
+                wallNormal.negate(); // Flip to face camera
+            }
+
+            console.log('Wall normal (perpendicular to surface):', wallNormal.toArray().map(v => v.toFixed(3)));
 
             // Apply manual X, Y, and Z offsets
             position.x += wallDecorParams.offsetX;
@@ -2686,31 +2819,14 @@
 
             wallDecor.position.copy(position);
 
-            // Orient decor to be flat against the wall (vertical, facing camera)
-            // The wall normal points toward the camera (away from the wall surface)
-            // We need to orient the decor so its local Z-axis aligns with the wall normal
-            // and its local Y-axis points up
-
-            const wallNormal = plane.normal.clone().normalize();
-
-            // World up vector (in inverted coords, up is -Y, in normal coords, up is +Y)
+            // Orient decor to face the camera (perpendicular to wall)
             const worldUp = new THREE.Vector3(0, viewer.camera.up.y < 0 ? -1 : 1, 0);
-
-            // Calculate right vector (perpendicular to both wall normal and world up)
             const right = new THREE.Vector3().crossVectors(worldUp, wallNormal).normalize();
-
-            // Recalculate up vector to ensure orthogonality
             const up = new THREE.Vector3().crossVectors(wallNormal, right).normalize();
 
-            // Create rotation matrix from the three axes
-            // For the decor mesh, we want:
-            // - X-axis (width) = right
-            // - Y-axis (height) = up
-            // - Z-axis (depth) = wallNormal (pointing toward camera)
             const matrix = new THREE.Matrix4();
             matrix.makeBasis(right, up, wallNormal);
 
-            // Extract quaternion from matrix
             const quaternion = new THREE.Quaternion().setFromRotationMatrix(matrix);
             wallDecor.quaternion.copy(quaternion);
 
@@ -2718,21 +2834,32 @@
             wallDecor.visible = wallDecorParams.visible;
 
             console.log('Wall decor placed at:', wallDecor.position);
-            console.log('Wall normal:', wallNormal);
-            console.log('Up vector:', up);
-            console.log('Right vector:', right);
+            console.log('Wall center:', wallCenter);
+            console.log('Wall bounds:', wallGaussianBounds);
+            console.log('Total wall gaussians:', wallGaussianPositions.length);
         }
 
         function updateWallDecorPosition() {
-            if (!wallDecor || !detectedWallPlane) return;
+            if (!wallDecor || wallGaussianPositions.length === 0) return;
 
-            const plane = detectedWallPlane;
-            const position = plane.centroid.clone();
+            // Calculate wall center
+            const wallCenter = new THREE.Vector3();
+            for (const pos of wallGaussianPositions) {
+                wallCenter.add(pos);
+            }
+            wallCenter.divideScalar(wallGaussianPositions.length);
+
+            const position = wallCenter.clone();
 
             // Apply X, Y, and Z offsets
             position.x += wallDecorParams.offsetX;
             position.y += wallDecorParams.offsetY;
             position.z += wallDecorParams.offsetZ;
+
+            // Clamp to bounds
+            if (wallGaussianBounds) {
+                position.clamp(wallGaussianBounds.min, wallGaussianBounds.max);
+            }
 
             wallDecor.position.copy(position);
         }
@@ -3546,48 +3673,41 @@
                 // Check if we have wall mask data from API (for generated splats)
                 if (wallMaskData && Array.isArray(wallMaskData)) {
                     try {
-                        // First, cluster the walls
-                        detectedWalls = clusterWallsFromGaussians(wallMaskData, viewer.splatMesh);
+                        // Simply collect all wall gaussians - no clustering!
+                        const collected = collectWallGaussians();
 
-                        if (detectedWalls.length === 0) {
-                            alert('No walls detected! Try adjusting clustering parameters.');
+                        if (!collected || wallGaussianPositions.length === 0) {
+                            alert('No wall gaussians found!');
                             showingWall = false;
                             return;
                         }
 
-                        console.log('Visualizing', detectedWalls.length, 'walls');
+                        console.log(`Visualizing ${wallGaussianPositions.length} wall gaussians`);
 
-                        // Create visualization for each wall in different colors
-                        wallVisualizationMesh = new THREE.Group();
+                        // Create visualization with all wall gaussians in one color
+                        const geometry = new THREE.BufferGeometry();
+                        const positions = new Float32Array(wallGaussianPositions.length * 3);
 
-                        for (const wall of detectedWalls) {
-                            const geometry = new THREE.BufferGeometry();
-                            const positions = new Float32Array(wall.positions.length * 3);
-
-                            for (let i = 0; i < wall.positions.length; i++) {
-                                positions[i * 3] = wall.positions[i].x;
-                                positions[i * 3 + 1] = wall.positions[i].y;
-                                positions[i * 3 + 2] = wall.positions[i].z;
-                            }
-
-                            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-
-                            const material = new THREE.PointsMaterial({
-                                color: wall.color,
-                                size: 0.05,
-                                sizeAttenuation: true,
-                                transparent: true,
-                                opacity: 0.8
-                            });
-
-                            const points = new THREE.Points(geometry, material);
-                            wallVisualizationMesh.add(points);
-
-                            console.log(`✓ Wall ${wall.id}: ${wall.gaussianCount} gaussians in ${wall.color}`);
+                        for (let i = 0; i < wallGaussianPositions.length; i++) {
+                            positions[i * 3] = wallGaussianPositions[i].x;
+                            positions[i * 3 + 1] = wallGaussianPositions[i].y;
+                            positions[i * 3 + 2] = wallGaussianPositions[i].z;
                         }
 
+                        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+                        const material = new THREE.PointsMaterial({
+                            color: '#4a90e2',
+                            size: 0.05,
+                            sizeAttenuation: true,
+                            transparent: true,
+                            opacity: 0.8
+                        });
+
+                        wallVisualizationMesh = new THREE.Points(geometry, material);
                         viewer.threeScene.add(wallVisualizationMesh);
-                        toggleWallBtn.textContent = `Hide ${detectedWalls.length} Walls`;
+
+                        toggleWallBtn.textContent = 'Hide Wall Gaussians';
                         toggleWallBtn.classList.add('active');
 
                     } catch (error) {
