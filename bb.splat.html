@@ -226,6 +226,146 @@
         .progressBarOuterContainer {
             display: none !important;
         }
+
+        /* Sidebar Styles */
+        #wallDecorSidebar, #rugSidebar {
+            position: fixed;
+            top: 0;
+            right: -400px;
+            width: 400px;
+            height: 100vh;
+            background: rgba(31, 31, 31, 0.95);
+            border-left: 1px solid #3a3a3a;
+            z-index: 2000;
+            transition: right 0.3s ease;
+            overflow-y: auto;
+            padding: 20px;
+            backdrop-filter: blur(10px);
+        }
+
+        #wallDecorSidebar.open, #rugSidebar.open {
+            right: 0;
+        }
+
+        #wallDecorSidebar .sidebar-header, #rugSidebar .sidebar-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid #3a3a3a;
+        }
+
+        #wallDecorSidebar .sidebar-header h2, #rugSidebar .sidebar-header h2 {
+            color: #ebebeb;
+            font-size: 18px;
+            font-weight: 600;
+            margin: 0;
+        }
+
+        #wallDecorSidebar .close-btn, #rugSidebar .close-btn {
+            background: none;
+            border: none;
+            color: #ebebeb;
+            font-size: 24px;
+            cursor: pointer;
+            padding: 0;
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 4px;
+            transition: background 0.15s ease;
+        }
+
+        #wallDecorSidebar .close-btn:hover, #rugSidebar .close-btn:hover {
+            background: #2a2a2a;
+        }
+
+        #wallDecorGrid, #rugGrid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 12px;
+        }
+
+        .wall-decor-item, .rug-item {
+            position: relative;
+            aspect-ratio: 1;
+            border: 2px solid #3a3a3a;
+            border-radius: 6px;
+            overflow: hidden;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            background: #2a2a2a;
+        }
+
+        .wall-decor-item:hover, .rug-item:hover {
+            border-color: #4a90e2;
+            transform: scale(1.05);
+        }
+
+        .wall-decor-item.selected, .rug-item.selected {
+            border-color: #4a90e2;
+            box-shadow: 0 0 0 2px rgba(74, 144, 226, 0.3);
+        }
+
+        .wall-decor-item img, .rug-item img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .wall-decor-item .decor-name, .rug-item .rug-name {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: rgba(0, 0, 0, 0.7);
+            color: #ebebeb;
+            padding: 6px 8px;
+            font-size: 11px;
+            text-align: center;
+            font-weight: 500;
+        }
+
+        .upload-custom-btn {
+            width: 100%;
+            padding: 12px 16px;
+            margin-top: 12px;
+            background: #2a2a2a;
+            border: 2px dashed #4a4a4a;
+            border-radius: 6px;
+            color: #ebebeb;
+            font-size: 12px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .upload-custom-btn:hover {
+            background: #333;
+            border-color: #4a90e2;
+        }
+
+        .upload-custom-btn input[type="file"] {
+            display: none;
+        }
+
+        #openWallDecorBtn, #openRugBtn {
+            background: linear-gradient(135deg, #4a90e2 0%, #357abd 100%);
+            border-color: #357abd;
+            font-weight: 600;
+        }
+
+        #openWallDecorBtn:hover:not(:disabled), #openRugBtn:hover:not(:disabled) {
+            background: linear-gradient(135deg, #5aa0f2 0%, #4585c7 100%);
+            border-color: #4585c7;
+        }
     </style>
 </head>
 
@@ -252,24 +392,41 @@
             <button class="btn" id="generateSplatBtn" disabled>Generate Splat</button>
             <button class="btn" id="downloadPlyBtn" disabled style="margin-top: 8px;">Download PLY File</button>
         </div>
-        <div id="rugSelectContainer">
-            <label>Select Sample Rug:</label>
-            <select id="rugSelect">
-                <option value="" selected>Choose a rug</option>
-                <option value="Atlantede.jpg">Atlantede</option>
-                <option value="Easther.jpg">Easther</option>
-                <option value="Tappeto Classico.jpg">Tappeto Classico</option>
-                <option value="Tappeto Classico Sea Green .jpg">Tappeto Classico Sea Green</option>
-                <option value="Telerense.jpg">Telerense</option>
-            </select>
-        </div>
-        <div id="rugUploadContainer">
-            <label>Upload Custom Rug:</label>
-            <input type="file" id="rugImageInput" accept="image/*">
-        </div>
+        <button class="btn" id="openRugBtn">Place Rug</button>
         <button class="btn" id="toggleFloorBtn" disabled>Show Floor Detection</button>
         <button class="btn" id="toggleWallBtn" disabled>Show Wall Detection</button>
+        <button class="btn" id="openWallDecorBtn">Place Wall Decor</button>
         <div id="status"></div>
+    </div>
+
+    <!-- Wall Decor Sidebar -->
+    <div id="wallDecorSidebar">
+        <div class="sidebar-header">
+            <h2>Wall Decor</h2>
+            <button class="close-btn" id="closeWallDecorBtn">&times;</button>
+        </div>
+        <div id="wallDecorGrid">
+            <!-- Wall decor items will be populated here -->
+        </div>
+        <label class="upload-custom-btn">
+            <input type="file" id="customWallDecorInput" accept="image/*">
+            <span>+ Upload Custom Decor</span>
+        </label>
+    </div>
+
+    <!-- Rug Sidebar -->
+    <div id="rugSidebar">
+        <div class="sidebar-header">
+            <h2>Select Rug</h2>
+            <button class="close-btn" id="closeRugBtn">&times;</button>
+        </div>
+        <div id="rugGrid">
+            <!-- Rug items will be populated here -->
+        </div>
+        <label class="upload-custom-btn">
+            <input type="file" id="customRugInput" accept="image/*">
+            <span>+ Upload Custom Rug</span>
+        </label>
     </div>
 
     <div id="instructions">
@@ -327,6 +484,19 @@
         let floorOrientation = 'horizontal'; // 'horizontal' or 'vertical'
         let selectedImageFile = null;
 
+        // Wall decor variables
+        let wallDecor = null;
+        let detectedWallPlane = null;
+        let detectedWalls = []; // Array of wall objects: {plane, positions, color, bounds}
+        let wallDecorGui = null;
+
+        const wallDecorParams = {
+            visible: true,
+            offsetX: 0,
+            offsetY: 0,
+            offsetZ: 0.02, // Small offset to place decor slightly in front of wall
+            scale: 0.5
+        };
 
         const rugParams = {
             visible: true,
@@ -522,7 +692,7 @@
                 viewer.controls.enablePan = true;
 
                 status.classList.remove('loading');
-                status.innerHTML = '<strong>Splat loaded successfully!</strong><br>Select a rug to place on the detected floor.';
+                status.innerHTML = '<strong>Splat loaded successfully!</strong><br>Click "Place Rug" to select and place a rug on the floor.';
 
                 // Re-enable button
                 generateBtn.disabled = false;
@@ -1509,7 +1679,84 @@
             return intersects.length > 0 ? intersects[0] : null;
         }
 
+        // Wall Decor Mouse Interaction Helper
+        function raycastMouseOnWallDecor(event) {
+            if (!wallDecor) return null;
+
+            const rect = viewer.renderer.domElement.getBoundingClientRect();
+            const mouse = new THREE.Vector2();
+            mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+            mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+            raycaster.setFromCamera(mouse, viewer.camera);
+            const intersects = raycaster.intersectObject(wallDecor);
+            return intersects.length > 0 ? intersects[0] : null;
+        }
+
+        function handleWallDecorMouseDown(event) {
+            // Check if clicking on wall decor (for dragging)
+            const intersect = raycastMouseOnWallDecor(event);
+            if (intersect) {
+                isDragging = true;
+
+                const rect = viewer.renderer.domElement.getBoundingClientRect();
+                const mouse = new THREE.Vector2();
+                mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+                mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+                raycaster.setFromCamera(mouse, viewer.camera);
+
+                // Create plane at wall decor position (like rug dragging)
+                const wallPlane = new THREE.Plane();
+                wallPlane.setFromNormalAndCoplanarPoint(detectedWallPlane.normal, wallDecor.position);
+
+                const wallPoint = new THREE.Vector3();
+                raycaster.ray.intersectPlane(wallPlane, wallPoint);
+
+                if (wallPoint) {
+                    offset.copy(wallPoint).sub(wallDecor.position);
+                } else {
+                    offset.copy(intersect.point).sub(wallDecor.position);
+                }
+
+                viewer.controls.enabled = false;
+                viewer.renderer.domElement.style.cursor = 'grabbing';
+                event.preventDefault();
+                return;
+            }
+
+            // If not clicking on wall decor, check if clicking on a wall to switch to it
+            const clickedWall = findClickedWall(event);
+            if (clickedWall && wallDecor) {
+                // Switch wall decor to the clicked wall
+                detectedWallPlane = clickedWall.wall.plane;
+
+                // Reset offsets for new wall
+                wallDecorParams.offsetX = 0;
+                wallDecorParams.offsetY = 0;
+                wallDecorParams.offsetZ = 0.02;
+
+                placeWallDecorOnWall();
+
+                if (wallDecorGui) {
+                    wallDecorGui.controllersRecursive().forEach(controller => controller.updateDisplay());
+                }
+
+                const status = document.getElementById('status');
+                status.textContent = `Wall decor moved to Wall ${clickedWall.wall.id}`;
+                status.style.display = 'block';
+                setTimeout(() => status.style.display = 'none', 2000);
+            }
+        }
+
         function onMouseDown(event) {
+            // Check wall decor first (higher priority if both exist)
+            if (wallDecor && wallDecor.visible) {
+                handleWallDecorMouseDown(event);
+                if (isDragging || isRotating || isResizing) return;
+            }
+
+            // Then check rug
             if (!rug || !rug.visible) return;
 
             // Check if clicking on corner handle (for resizing)
@@ -1590,7 +1837,50 @@
             }
         }
 
+        function handleWallDecorMouseMove(event) {
+            if (isDragging) {
+                const rect = viewer.renderer.domElement.getBoundingClientRect();
+                const mouse = new THREE.Vector2();
+                mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+                mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+                raycaster.setFromCamera(mouse, viewer.camera);
+
+                // Create plane at wallDecor's current position (same as rug dragging)
+                const wallPlane = new THREE.Plane();
+                wallPlane.setFromNormalAndCoplanarPoint(detectedWallPlane.normal, wallDecor.position);
+
+                const mouseWorldPos = new THREE.Vector3();
+                const intersected = raycaster.ray.intersectPlane(wallPlane, mouseWorldPos);
+
+                if (intersected && mouseWorldPos) {
+                    const newPos = mouseWorldPos.clone().sub(offset);
+
+                    // Update wall decor position
+                    wallDecor.position.copy(newPos);
+
+                    // Update the offset params to match
+                    const initialPos = detectedWallPlane.centroid.clone();
+                    wallDecorParams.offsetX = newPos.x - initialPos.x;
+                    wallDecorParams.offsetY = newPos.y - initialPos.y;
+                    wallDecorParams.offsetZ = newPos.z - initialPos.z;
+
+                    if (wallDecorGui) {
+                        wallDecorGui.controllersRecursive().forEach(controller => controller.updateDisplay());
+                    }
+
+                    event.preventDefault();
+                }
+            }
+        }
+
         function onMouseMove(event) {
+            // Handle wall decor interactions
+            if (wallDecor && wallDecor.visible && (isDragging || isRotating || isResizing)) {
+                handleWallDecorMouseMove(event);
+                return;
+            }
+
             if (!rug || !rug.visible) return;
 
             if (isResizing) {
@@ -1698,7 +1988,16 @@
                     event.preventDefault();
                 }
             } else {
-                // Show gizmo on hover
+                // Check wall decor hover first
+                if (wallDecor && wallDecor.visible) {
+                    const wallIntersect = raycastMouseOnWallDecor(event);
+                    if (wallIntersect) {
+                        viewer.renderer.domElement.style.cursor = 'move';
+                        return;
+                    }
+                }
+
+                // Then check rug hover
                 const cornerIndex = findCornerIntersection(event);
                 if (cornerIndex !== null) {
                     updateGizmo(true);
@@ -1758,6 +2057,715 @@
             transformFolder.add(rugParams, 'scale', 0.1, 10, 0.01).name('Scale').onChange(() => updateRug(true));
             transformFolder.open();
         }
+
+        // ========== WALL DECOR FUNCTIONALITY ==========
+
+        function setupWallDecorGUI() {
+            if (wallDecorGui) wallDecorGui.destroy();
+
+            wallDecorGui = new GUI();
+            wallDecorGui.title('Wall Decor Controls');
+
+            wallDecorGui.add(wallDecorParams, 'visible').name('Visible').onChange(() => {
+                if (wallDecor) {
+                    wallDecor.visible = wallDecorParams.visible;
+                }
+            });
+
+            const posFolder = wallDecorGui.addFolder('Position Offset');
+            posFolder.add(wallDecorParams, 'offsetX', -3, 3, 0.01).name('X (horizontal)').onChange(() => updateWallDecorPosition());
+            posFolder.add(wallDecorParams, 'offsetY', -3, 3, 0.01).name('Y (vertical)').onChange(() => updateWallDecorPosition());
+            posFolder.add(wallDecorParams, 'offsetZ', -0.5, 0.5, 0.001).name('Z (depth)').onChange(() => updateWallDecorPosition());
+            posFolder.open();
+
+            const transformFolder = wallDecorGui.addFolder('Transform');
+            transformFolder.add(wallDecorParams, 'scale', 0.1, 10, 0.01).name('Scale').onChange(() => updateWallDecor(true));
+            transformFolder.open();
+
+            // Add hint about switching walls
+            const hint = document.createElement('div');
+            hint.style.cssText = 'padding: 8px; background: #1a2a1a; color: #90ee90; border-radius: 4px; font-size: 11px; margin-top: 8px; border: 1px solid #2a4a2a;';
+            hint.textContent = '💡 Click on any wall to move the decor there!';
+            wallDecorGui.domElement.appendChild(hint);
+        }
+
+        function populateWallDecorGrid() {
+            const grid = document.getElementById('wallDecorGrid');
+            grid.innerHTML = '';
+
+            const wallDecors = [
+                { name: 'Wall Decor 1', path: 'assets/wallDecors/wallDecor1.jpg' },
+                { name: 'Wall Decor 2', path: 'assets/wallDecors/wallDecor2.jpg' },
+                { name: 'Wall Decor 3', path: 'assets/wallDecors/wallDecor3.jpg' },
+                { name: 'Wall Decor 4', path: 'assets/wallDecors/wallDecor4.jpg' },
+                { name: 'Wall Decor 5', path: 'assets/wallDecors/wallDecor5.jpg' }
+            ];
+
+            wallDecors.forEach(decor => {
+                const item = document.createElement('div');
+                item.className = 'wall-decor-item';
+                item.innerHTML = `
+                    <img src="${decor.path}" alt="${decor.name}">
+                    <div class="decor-name">${decor.name}</div>
+                `;
+                item.addEventListener('click', () => selectWallDecor(decor.path));
+                grid.appendChild(item);
+            });
+        }
+
+        function populateRugGrid() {
+            const grid = document.getElementById('rugGrid');
+            grid.innerHTML = '';
+
+            const rugs = [
+                { name: 'Atlantede', path: 'assets/rugs/Atlantede.jpg' },
+                { name: 'Easther', path: 'assets/rugs/Easther.jpg' },
+                { name: 'Tappeto Classico', path: 'assets/rugs/Tappeto Classico.jpg' },
+                { name: 'Tappeto Classico Sea Green', path: 'assets/rugs/Tappeto Classico Sea Green .jpg' },
+                { name: 'Telerense', path: 'assets/rugs/Telerense.jpg' }
+            ];
+
+            rugs.forEach(rug => {
+                const item = document.createElement('div');
+                item.className = 'rug-item';
+                item.innerHTML = `
+                    <img src="${rug.path}" alt="${rug.name}">
+                    <div class="rug-name">${rug.name}</div>
+                `;
+                item.addEventListener('click', () => selectRug(rug.path));
+                grid.appendChild(item);
+            });
+        }
+
+        async function selectRug(rugPath) {
+            const status = document.getElementById('status');
+
+            // Highlight selected item
+            document.querySelectorAll('.rug-item').forEach(item => {
+                item.classList.remove('selected');
+            });
+            if (event && event.target) {
+                const clickedItem = event.target.closest('.rug-item');
+                if (clickedItem) clickedItem.classList.add('selected');
+            }
+
+            status.textContent = 'Loading rug...';
+            status.style.display = 'block';
+
+            try {
+                // Place the rug
+                await placeRugAuto(rugPath);
+
+                // Close sidebar after selection
+                document.getElementById('rugSidebar').classList.remove('open');
+            } catch (error) {
+                status.textContent = `Error: ${error.message}`;
+                console.error(error);
+            }
+        }
+
+        async function selectWallDecor(decorPath) {
+            const status = document.getElementById('status');
+
+            // Highlight selected item
+            document.querySelectorAll('.wall-decor-item').forEach(item => {
+                item.classList.remove('selected');
+            });
+            event.target.closest('.wall-decor-item').classList.add('selected');
+
+            // Remove old wall decor
+            removeCurrentWallDecor();
+
+            status.textContent = 'Detecting wall...';
+            status.style.display = 'block';
+
+            try {
+                // Detect wall if not already detected
+                if (!detectedWallPlane) {
+                    const wallDetected = await detectWall();
+                    if (!wallDetected) {
+                        return;
+                    }
+                }
+
+                // Create and place the wall decor
+                status.textContent = 'Placing wall decor...';
+                await createWallDecor(decorPath);
+
+                // Reset offsets for new placement
+                wallDecorParams.offsetX = 0;
+                wallDecorParams.offsetY = 0;
+                wallDecorParams.offsetZ = 0.02;
+
+                placeWallDecorOnWall();
+
+                setupWallDecorGUI();
+                status.textContent = 'Wall decor placed! Drag to move, click walls to switch.';
+
+                // Close sidebar after selection
+                document.getElementById('wallDecorSidebar').classList.remove('open');
+            } catch (error) {
+                status.textContent = `Error: ${error.message}`;
+                console.error(error);
+            }
+        }
+
+        function createWallDecor(textureUrl) {
+            return new Promise((resolve, reject) => {
+                const textureLoader = new THREE.TextureLoader();
+                textureLoader.load(textureUrl, (texture) => {
+                    if (wallDecor && viewer.threeScene) {
+                        viewer.threeScene.remove(wallDecor);
+                        wallDecor.geometry.dispose();
+                        wallDecor.material.dispose();
+                    }
+
+                    const decorWidth = 1.5;
+                    const aspectRatio = texture.image.height / texture.image.width;
+                    const decorHeight = decorWidth * aspectRatio;
+
+                    // Use BoxGeometry to give the decor some depth
+                    const decorDepth = 0.01;
+                    const geometry = new THREE.BoxGeometry(decorWidth, decorHeight, decorDepth);
+                    const material = new THREE.MeshBasicMaterial({
+                        map: texture,
+                        side: THREE.DoubleSide,
+                        transparent: true
+                    });
+
+                    wallDecor = new THREE.Mesh(geometry, material);
+                    wallDecor.visible = wallDecorParams.visible;
+
+                    // No gizmo for wall decor - keep it simple!
+
+                    if (viewer.threeScene) {
+                        viewer.threeScene.add(wallDecor);
+                    }
+
+                    resolve(wallDecor);
+                }, undefined, reject);
+            });
+        }
+
+        async function detectWall() {
+            const status = document.getElementById('status');
+
+            status.style.display = 'block';
+            status.textContent = 'Detecting wall...';
+
+            await new Promise(resolve => requestAnimationFrame(resolve));
+
+            try {
+                const splatMesh = viewer.splatMesh;
+                if (!splatMesh) throw new Error('Splat mesh not loaded');
+
+                const splatCount = splatMesh.getSplatCount();
+
+                // Check if we have wall mask data from API
+                if (wallMaskData && Array.isArray(wallMaskData)) {
+                    console.log('=== USING WALL MASK FOR MULTI-WALL DETECTION ===');
+                    status.textContent = 'Clustering walls from API mask...';
+
+                    // Cluster all walls if not already done
+                    if (detectedWalls.length === 0) {
+                        detectedWalls = clusterWallsFromGaussians(wallMaskData, splatMesh);
+                    }
+
+                    if (detectedWalls.length === 0) {
+                        status.textContent = 'No walls detected! Try adjusting clustering parameters.';
+                        return false;
+                    }
+
+                    console.log(`Found ${detectedWalls.length} walls`);
+
+                    // Set the first wall as the default detectedWallPlane for backward compatibility
+                    // (This will be overridden during placement when user clicks)
+                    detectedWallPlane = detectedWalls[0].plane;
+
+                    status.innerHTML = `<strong>${detectedWalls.length} Walls Detected!</strong><br>
+                        Click any wall to place decor!`;
+                    return true;
+                }
+
+                // FOR LOCAL SPLATS: Use RANSAC with vertical plane detection
+                console.log('=== USING RANSAC FOR WALL DETECTION ===');
+
+                const targetSampleCount = 20000;
+                const step = Math.max(1, Math.floor(splatCount / targetSampleCount));
+
+                const points = [];
+                const center = new THREE.Vector3();
+
+                for (let i = 0; i < splatCount; i += step) {
+                    splatMesh.getSplatCenter(i, center);
+                    points.push({ x: center.x, y: center.y, z: center.z });
+                }
+
+                status.textContent = `Analyzing ${points.length.toLocaleString()} points for walls...`;
+
+                await new Promise(resolve => setTimeout(resolve, 10));
+
+                // Get camera position and direction
+                const cameraPos = viewer.camera.position.clone();
+                const cameraDir = new THREE.Vector3();
+                viewer.camera.getWorldDirection(cameraDir);
+                const isInvertedY = viewer.camera.up.y < 0;
+
+                // Use vertical plane detection
+                const plane = detectVerticalPlane(points, 2000, 0.05, cameraPos, cameraDir, isInvertedY);
+
+                if (plane) {
+                    detectedWallPlane = plane;
+
+                    status.innerHTML = `<strong>Wall Detected!</strong><br>
+                        Inliers: ${plane.inliers}<br>
+                        Ready to place decor!`;
+                    return true;
+                } else {
+                    status.textContent = 'Could not find wall. Try facing a wall directly.';
+                    return false;
+                }
+            } catch (error) {
+                status.textContent = `Error: ${error.message}`;
+                console.error(error);
+                return false;
+            }
+        }
+
+        function fitPlaneToWallGaussians(wallPositions, cameraPos) {
+            const n = wallPositions.length;
+            if (n < 3) return null;
+
+            // Calculate centroid
+            let sumX = 0, sumY = 0, sumZ = 0;
+            for (const pos of wallPositions) {
+                sumX += pos.x;
+                sumY += pos.y;
+                sumZ += pos.z;
+            }
+            const centroid = new THREE.Vector3(sumX / n, sumY / n, sumZ / n);
+
+            // Build covariance matrix
+            let xx = 0, xy = 0, xz = 0;
+            let yy = 0, yz = 0, zz = 0;
+
+            for (const pos of wallPositions) {
+                const dx = pos.x - centroid.x;
+                const dy = pos.y - centroid.y;
+                const dz = pos.z - centroid.z;
+
+                xx += dx * dx;
+                xy += dx * dy;
+                xz += dx * dz;
+                yy += dy * dy;
+                yz += dy * dz;
+                zz += dz * dz;
+            }
+
+            xx /= n; xy /= n; xz /= n;
+            yy /= n; yz /= n; zz /= n;
+
+            // Find principal components using power iteration
+            let pc1 = new THREE.Vector3(1, 0, 0);
+            for (let iter = 0; iter < 20; iter++) {
+                const x = xx * pc1.x + xy * pc1.y + xz * pc1.z;
+                const y = xy * pc1.x + yy * pc1.y + yz * pc1.z;
+                const z = xz * pc1.x + yz * pc1.y + zz * pc1.z;
+                pc1.set(x, y, z).normalize();
+            }
+
+            let pc2 = new THREE.Vector3(0, 1, 0);
+            pc2.sub(pc1.clone().multiplyScalar(pc2.dot(pc1))).normalize();
+
+            for (let iter = 0; iter < 20; iter++) {
+                const x = xx * pc2.x + xy * pc2.y + xz * pc2.z;
+                const y = xy * pc2.x + yy * pc2.y + yz * pc2.z;
+                const z = xz * pc2.x + yz * pc2.y + zz * pc2.z;
+                pc2.set(x, y, z);
+                pc2.sub(pc1.clone().multiplyScalar(pc2.dot(pc1))).normalize();
+            }
+
+            // The normal is perpendicular to both principal components
+            const normal = new THREE.Vector3().crossVectors(pc1, pc2).normalize();
+
+            // CRITICAL: Ensure normal points toward camera (into the room)
+            const centroidToCamera = new THREE.Vector3().subVectors(cameraPos, centroid);
+
+            if (normal.dot(centroidToCamera) < 0) {
+                normal.negate();
+            }
+
+            const d = -normal.dot(centroid);
+
+            console.log('Fitted plane to', n, 'wall gaussians using PCA');
+            console.log('Plane normal:', normal.toArray().map(v => v.toFixed(3)));
+            console.log('Plane centroid:', centroid.toArray().map(v => v.toFixed(3)));
+            console.log('Normal points toward camera:', normal.dot(centroidToCamera) > 0);
+
+            return {
+                normal: normal,
+                centroid: centroid,
+                d: d,
+                inliers: n
+            };
+        }
+
+        /**
+         * Cluster wall Gaussians into separate walls based on their spatial distribution
+         * Uses fast grid-based clustering, then merges clusters with similar normals
+         */
+        function clusterWallsFromGaussians(wallMaskData, splatMesh) {
+            const splatCount = splatMesh.getSplatCount();
+            const wallPositions = [];
+            const center = new THREE.Vector3();
+
+            console.log('=== CLUSTERING WALLS ===');
+            const startTime = performance.now();
+
+            // Collect all wall Gaussian positions
+            for (let i = 0; i < Math.min(wallMaskData.length, splatCount); i++) {
+                if (wallMaskData[i]) {
+                    splatMesh.getSplatCenter(i, center);
+                    wallPositions.push(center.clone());
+                }
+            }
+
+            console.log('Total wall Gaussians:', wallPositions.length);
+
+            if (wallPositions.length < 10) {
+                console.warn('Not enough wall Gaussians to cluster');
+                return [];
+            }
+
+            // Fast grid-based clustering
+            const voxelSize = 0.3; // 30cm voxels
+            const voxelMap = new Map();
+
+            // Step 1: Voxelize
+            for (const pos of wallPositions) {
+                const vx = Math.floor(pos.x / voxelSize);
+                const vy = Math.floor(pos.y / voxelSize);
+                const vz = Math.floor(pos.z / voxelSize);
+                const key = `${vx},${vy},${vz}`;
+
+                if (!voxelMap.has(key)) {
+                    voxelMap.set(key, []);
+                }
+                voxelMap.get(key).push(pos);
+            }
+
+            console.log('Voxelized into', voxelMap.size, 'voxels');
+
+            // Step 2: Simple flood fill without planarity check
+            const visited = new Set();
+            const clusters = [];
+
+            for (const [voxelKey, positions] of voxelMap.entries()) {
+                if (visited.has(voxelKey)) continue;
+
+                const cluster = [];
+                const queue = [voxelKey];
+                visited.add(voxelKey);
+
+                while (queue.length > 0) {
+                    const currentKey = queue.shift();
+                    cluster.push(...voxelMap.get(currentKey));
+
+                    const [vx, vy, vz] = currentKey.split(',').map(Number);
+                    for (let dx = -1; dx <= 1; dx++) {
+                        for (let dy = -1; dy <= 1; dy++) {
+                            for (let dz = -1; dz <= 1; dz++) {
+                                if (dx === 0 && dy === 0 && dz === 0) continue;
+
+                                const neighborKey = `${vx + dx},${vy + dy},${vz + dz}`;
+                                if (voxelMap.has(neighborKey) && !visited.has(neighborKey)) {
+                                    visited.add(neighborKey);
+                                    queue.push(neighborKey);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (cluster.length >= 30) {
+                    clusters.push(cluster);
+                }
+            }
+
+            console.log('Found', clusters.length, 'spatial clusters');
+
+            // Step 3: Fit planes to all clusters and merge similar orientations
+            const clustersWithPlanes = [];
+            for (const cluster of clusters) {
+                const plane = fitPlaneToFloorGaussians(cluster);
+                if (plane) {
+                    clustersWithPlanes.push({ positions: cluster, plane: plane });
+                }
+            }
+
+            // Step 4: Merge clusters with similar normals (same wall orientation)
+            // Group by normal direction - walls that face the same direction = same wall
+            const mergedClusters = [];
+            const normalThreshold = 0.9; // cos(~25°) - normals must be within 25° to merge
+
+            for (const cluster of clustersWithPlanes) {
+                let merged = false;
+
+                // Try to merge with existing cluster
+                for (const existing of mergedClusters) {
+                    const normalAlignment = Math.abs(cluster.plane.normal.dot(existing.plane.normal));
+
+                    if (normalAlignment > normalThreshold) {
+                        // Same orientation - merge
+                        existing.positions.push(...cluster.positions);
+                        merged = true;
+                        break;
+                    }
+                }
+
+                if (!merged) {
+                    mergedClusters.push({
+                        positions: [...cluster.positions],
+                        plane: cluster.plane
+                    });
+                }
+            }
+
+            console.log('After merging by orientation:', mergedClusters.length, 'wall groups');
+
+            // Step 5: Refit planes to merged clusters and FILTER for vertical walls only
+            const walls = [];
+            const colors = [
+                '#ff0000', '#00ff00', '#0000ff', '#ffff00',
+                '#ff00ff', '#00ffff', '#ff8800', '#8800ff'
+            ];
+
+            let wallIndex = 0;
+            for (let i = 0; i < mergedClusters.length; i++) {
+                const positions = mergedClusters[i].positions;
+
+                // Refit plane to merged positions
+                const plane = fitPlaneToFloorGaussians(positions);
+                if (!plane) continue;
+
+                // *** CRITICAL: Filter out horizontal planes (floor/ceiling) ***
+                // Walls must be VERTICAL - normal should be mostly horizontal
+                // For a vertical wall: |normal.y| should be small (close to 0)
+                // For a horizontal floor/ceiling: |normal.y| would be close to 1
+                const absY = Math.abs(plane.normal.y);
+
+                if (absY > 0.5) {
+                    // This is a horizontal surface (floor/ceiling), not a wall - reject it
+                    console.log(`❌ Rejected cluster ${i}: ${positions.length} gaussians - horizontal surface (|normal.y|=${absY.toFixed(2)} > 0.5)`);
+                    console.log(`   Normal: [${plane.normal.x.toFixed(2)}, ${plane.normal.y.toFixed(2)}, ${plane.normal.z.toFixed(2)}]`);
+                    continue;
+                }
+
+                // Calculate bounds
+                const bounds = {
+                    min: new THREE.Vector3(Infinity, Infinity, Infinity),
+                    max: new THREE.Vector3(-Infinity, -Infinity, -Infinity)
+                };
+
+                for (const pos of positions) {
+                    bounds.min.min(pos);
+                    bounds.max.max(pos);
+                }
+
+                walls.push({
+                    id: wallIndex,
+                    plane: plane,
+                    positions: positions,
+                    color: colors[wallIndex % colors.length],
+                    bounds: bounds,
+                    gaussianCount: positions.length
+                });
+
+                console.log(`✅ Wall ${wallIndex}: ${positions.length} gaussians, normal: [${plane.normal.x.toFixed(2)}, ${plane.normal.y.toFixed(2)}, ${plane.normal.z.toFixed(2)}] (|Y|=${absY.toFixed(2)})`);
+                wallIndex++;
+            }
+
+            const elapsed = performance.now() - startTime;
+            console.log(`Clustering took ${elapsed.toFixed(0)}ms`);
+
+            return walls;
+        }
+
+        /**
+         * Find which wall was clicked by raycasting against all detected walls
+         * Returns {wall, intersection, distance} or null
+         */
+        function findClickedWall(event) {
+            if (detectedWalls.length === 0) return null;
+
+            const rect = viewer.renderer.domElement.getBoundingClientRect();
+            const mouse = new THREE.Vector2();
+            mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+            mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+            raycaster.setFromCamera(mouse, viewer.camera);
+
+            let closestWall = null;
+            let closestIntersection = null;
+            let closestDistance = Infinity;
+
+            // Check each wall
+            for (const wall of detectedWalls) {
+                const plane = new THREE.Plane();
+                plane.setFromNormalAndCoplanarPoint(wall.plane.normal, wall.plane.centroid);
+
+                const intersection = new THREE.Vector3();
+                const intersected = raycaster.ray.intersectPlane(plane, intersection);
+
+                if (intersected) {
+                    // Check if intersection is within wall bounds
+                    const inBounds = (
+                        intersection.x >= wall.bounds.min.x && intersection.x <= wall.bounds.max.x &&
+                        intersection.y >= wall.bounds.min.y && intersection.y <= wall.bounds.max.y &&
+                        intersection.z >= wall.bounds.min.z && intersection.z <= wall.bounds.max.z
+                    );
+
+                    if (inBounds) {
+                        const distance = viewer.camera.position.distanceTo(intersection);
+                        if (distance < closestDistance) {
+                            closestDistance = distance;
+                            closestIntersection = intersection;
+                            closestWall = wall;
+                        }
+                    }
+                }
+            }
+
+            if (closestWall) {
+                return {
+                    wall: closestWall,
+                    intersection: closestIntersection,
+                    distance: closestDistance
+                };
+            }
+
+            return null;
+        }
+
+        function placeWallDecorOnWall() {
+            if (!wallDecor) return;
+
+            // If we have multiple walls detected, use the first one as default
+            // (User can later click to place on specific walls)
+            let plane = detectedWallPlane;
+
+            if (detectedWalls.length > 0 && !plane) {
+                plane = detectedWalls[0].plane;
+                detectedWallPlane = plane;
+            }
+
+            if (!plane) return;
+
+            const cameraPos = viewer.camera.position.clone();
+
+            // Place decor at wall centroid, at camera eye level
+            let position = plane.centroid.clone();
+
+            // Set Y to camera level (eye level)
+            position.y = cameraPos.y;
+
+            // Project the position back onto the wall plane to ensure it's on the surface
+            // Calculate the point on the plane closest to our desired position
+            const vecFromCentroid = new THREE.Vector3().subVectors(position, plane.centroid);
+            const distanceAlongNormal = vecFromCentroid.dot(plane.normal);
+            position.sub(plane.normal.clone().multiplyScalar(distanceAlongNormal));
+
+            // Offset slightly toward the camera (0.01 units into the room)
+            // This prevents z-fighting with the wall surface
+            position.add(plane.normal.clone().multiplyScalar(0.01));
+
+            // Apply manual X, Y, and Z offsets
+            position.x += wallDecorParams.offsetX;
+            position.y += wallDecorParams.offsetY;
+            position.z += wallDecorParams.offsetZ;
+
+            wallDecor.position.copy(position);
+
+            // Orient decor to be flat against the wall (vertical, facing camera)
+            // The wall normal points toward the camera (away from the wall surface)
+            // We need to orient the decor so its local Z-axis aligns with the wall normal
+            // and its local Y-axis points up
+
+            const wallNormal = plane.normal.clone().normalize();
+
+            // World up vector (in inverted coords, up is -Y, in normal coords, up is +Y)
+            const worldUp = new THREE.Vector3(0, viewer.camera.up.y < 0 ? -1 : 1, 0);
+
+            // Calculate right vector (perpendicular to both wall normal and world up)
+            const right = new THREE.Vector3().crossVectors(worldUp, wallNormal).normalize();
+
+            // Recalculate up vector to ensure orthogonality
+            const up = new THREE.Vector3().crossVectors(wallNormal, right).normalize();
+
+            // Create rotation matrix from the three axes
+            // For the decor mesh, we want:
+            // - X-axis (width) = right
+            // - Y-axis (height) = up
+            // - Z-axis (depth) = wallNormal (pointing toward camera)
+            const matrix = new THREE.Matrix4();
+            matrix.makeBasis(right, up, wallNormal);
+
+            // Extract quaternion from matrix
+            const quaternion = new THREE.Quaternion().setFromRotationMatrix(matrix);
+            wallDecor.quaternion.copy(quaternion);
+
+            wallDecor.scale.set(wallDecorParams.scale, wallDecorParams.scale, wallDecorParams.scale);
+            wallDecor.visible = wallDecorParams.visible;
+
+            console.log('Wall decor placed at:', wallDecor.position);
+            console.log('Wall normal:', wallNormal);
+            console.log('Up vector:', up);
+            console.log('Right vector:', right);
+        }
+
+        function updateWallDecorPosition() {
+            if (!wallDecor || !detectedWallPlane) return;
+
+            const plane = detectedWallPlane;
+            const position = plane.centroid.clone();
+
+            // Apply X, Y, and Z offsets
+            position.x += wallDecorParams.offsetX;
+            position.y += wallDecorParams.offsetY;
+            position.z += wallDecorParams.offsetZ;
+
+            wallDecor.position.copy(position);
+        }
+
+        function updateWallDecor(skipPositionRecalc = false) {
+            if (!skipPositionRecalc) {
+                placeWallDecorOnWall();
+            } else {
+                // Just update scale without recalculating position/orientation
+                if (!wallDecor) return;
+                wallDecor.scale.set(wallDecorParams.scale, wallDecorParams.scale, wallDecorParams.scale);
+                wallDecor.visible = wallDecorParams.visible;
+            }
+        }
+
+        function removeCurrentWallDecor() {
+            if (wallDecor && viewer.threeScene) {
+                viewer.threeScene.remove(wallDecor);
+                if (wallDecor.geometry) wallDecor.geometry.dispose();
+                if (wallDecor.material) {
+                    if (wallDecor.material.map) wallDecor.material.map.dispose();
+                    wallDecor.material.dispose();
+                }
+                wallDecor = null;
+            }
+
+            if (wallDecorGui) {
+                wallDecorGui.destroy();
+                wallDecorGui = null;
+            }
+        }
+
+        // ========== END WALL DECOR FUNCTIONALITY ==========
 
         /**
          * Fit a plane to floor gaussians using PCA (Principal Component Analysis)
@@ -1994,6 +3002,8 @@
             }
         }
 
+        // Old handleRugUpload - no longer used with new sidebar UI
+        // Kept for backward compatibility if needed
         async function handleRugUpload(event) {
             const file = event.target.files[0];
             const status = document.getElementById('status');
@@ -2004,10 +3014,6 @@
                     customRugTexture = e.target.result;
                     status.textContent = 'Custom rug loaded! Placing on floor...';
                     status.style.display = 'block';
-
-                    // Reset the rug select dropdown
-                    const rugSelect = document.getElementById('rugSelect');
-                    if (rugSelect) rugSelect.value = '';
 
                     // Automatically place the custom rug
                     await placeRugAuto(customRugTexture);
@@ -2156,6 +3162,9 @@
             // Remove current rug and its gizmos
             removeCurrentRug();
 
+            // Remove current wall decor and its gizmos
+            removeCurrentWallDecor();
+
             // Remove floor plane visualization
             if (floorPlaneMesh && viewer.threeScene) {
                 viewer.threeScene.remove(floorPlaneMesh);
@@ -2181,8 +3190,9 @@
                 wallVisualizationMesh = null;
             }
 
-            // Clear detected plane
+            // Clear detected planes
             detectedPlane = null;
+            detectedWallPlane = null;
 
             // Clear custom rug texture
             customRugTexture = null;
@@ -2199,13 +3209,20 @@
             rugParams.rotation = 0;
             rugParams.scale = 0.5;
 
-            // Reset file input
-            const rugInput = document.getElementById('rugImageInput');
-            if (rugInput) rugInput.value = '';
+            // Reset wall decor params
+            wallDecorParams.visible = true;
+            wallDecorParams.offsetX = 0;
+            wallDecorParams.offsetY = 0;
+            wallDecorParams.offsetZ = 0.02;
+            wallDecorParams.rotation = 0;
+            wallDecorParams.scale = 0.5;
 
-            // Reset rug select dropdown
-            const rugSelect = document.getElementById('rugSelect');
-            if (rugSelect) rugSelect.value = '';
+            // Reset custom file inputs
+            const customRugInput = document.getElementById('customRugInput');
+            if (customRugInput) customRugInput.value = '';
+
+            const customWallDecorInput = document.getElementById('customWallDecorInput');
+            if (customWallDecorInput) customWallDecorInput.value = '';
         }
 
         async function changeSplat(newSplatPath) {
@@ -2233,7 +3250,7 @@
                 viewer.start();
                 splatLoaded = true;
                 document.getElementById('toggleFloorBtn').disabled = false;
-                status.textContent = 'Scene loaded! Select a sample rug or upload your own rug image.';
+                status.textContent = 'Scene loaded! Click "Place Rug" to select and place a rug.';
             } catch (error) {
                 console.error('Error loading splat:', error);
                 status.textContent = `Error loading scene: ${error.message}`;
@@ -2257,13 +3274,62 @@
             if (controlsVisible) {
                 controls.style.display = 'flex';
                 if (gui) gui.show();
+                if (wallDecorGui) wallDecorGui.show();
                 instructions.style.display = 'block';
             } else {
                 controls.style.display = 'none';
                 if (gui) gui.hide();
+                if (wallDecorGui) wallDecorGui.hide();
                 instructions.style.display = 'block'; // Keep instructions visible
             }
         }
+
+        // Wall Decor Sidebar Controls
+        document.getElementById('openWallDecorBtn').addEventListener('click', () => {
+            document.getElementById('wallDecorSidebar').classList.add('open');
+            populateWallDecorGrid();
+        });
+
+        document.getElementById('closeWallDecorBtn').addEventListener('click', () => {
+            document.getElementById('wallDecorSidebar').classList.remove('open');
+        });
+
+        // Rug Sidebar Controls
+        document.getElementById('openRugBtn').addEventListener('click', () => {
+            document.getElementById('rugSidebar').classList.add('open');
+            populateRugGrid();
+        });
+
+        document.getElementById('closeRugBtn').addEventListener('click', () => {
+            document.getElementById('rugSidebar').classList.remove('open');
+        });
+
+        // Custom upload handlers
+        document.getElementById('customWallDecorInput').addEventListener('change', async (event) => {
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = async (e) => {
+                    const decorUrl = e.target.result;
+                    document.getElementById('wallDecorSidebar').classList.remove('open');
+                    await selectWallDecor(decorUrl);
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+
+        document.getElementById('customRugInput').addEventListener('change', async (event) => {
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = async (e) => {
+                    const rugUrl = e.target.result;
+                    document.getElementById('rugSidebar').classList.remove('open');
+                    await selectRug(rugUrl);
+                };
+                reader.readAsDataURL(file);
+            }
+        });
 
         // Keyboard event listener
         window.addEventListener('keydown', (event) => {
@@ -2304,8 +3370,9 @@
 
 
 
-        document.getElementById('rugSelect').addEventListener('change', handleRugSelect);
-        document.getElementById('rugImageInput').addEventListener('change', handleRugUpload);
+        // Old rug controls removed - now using sidebar
+        // document.getElementById('rugSelect').addEventListener('change', handleRugSelect);
+        // document.getElementById('rugImageInput').addEventListener('change', handleRugUpload);
         document.getElementById('splatSelect').addEventListener('change', handleSplatChange);
 
         // Generate splat event listeners
@@ -2479,61 +3546,53 @@
                 // Check if we have wall mask data from API (for generated splats)
                 if (wallMaskData && Array.isArray(wallMaskData)) {
                     try {
-                        // Wall mask is a boolean array (true/false for each Gaussian)
-                        const splatCount = viewer.splatMesh.getSplatCount();
-                        console.log('Wall mask 3D size:', wallMaskData.length, 'Splat count:', splatCount);
+                        // First, cluster the walls
+                        detectedWalls = clusterWallsFromGaussians(wallMaskData, viewer.splatMesh);
 
-                        // Count wall splats and collect their positions
-                        let wallSplatCount = 0;
-                        const wallPositions = [];
-                        const center = new THREE.Vector3();
-
-                        for (let i = 0; i < Math.min(wallMaskData.length, splatCount); i++) {
-                            if (wallMaskData[i]) { // Boolean value: true = wall
-                                viewer.splatMesh.getSplatCenter(i, center);
-                                wallPositions.push(center.clone());
-                                wallSplatCount++;
-                            }
+                        if (detectedWalls.length === 0) {
+                            alert('No walls detected! Try adjusting clustering parameters.');
+                            showingWall = false;
+                            return;
                         }
 
-                        console.log('Wall splats detected by API:', wallSplatCount, '/', splatCount,
-                            '(' + ((wallSplatCount / splatCount) * 100).toFixed(1) + '%)');
+                        console.log('Visualizing', detectedWalls.length, 'walls');
 
-                        if (wallSplatCount > 0) {
-                            // Create point cloud visualization of wall splats
+                        // Create visualization for each wall in different colors
+                        wallVisualizationMesh = new THREE.Group();
+
+                        for (const wall of detectedWalls) {
                             const geometry = new THREE.BufferGeometry();
-                            const positions = new Float32Array(wallSplatCount * 3);
+                            const positions = new Float32Array(wall.positions.length * 3);
 
-                            for (let i = 0; i < wallSplatCount; i++) {
-                                positions[i * 3] = wallPositions[i].x;
-                                positions[i * 3 + 1] = wallPositions[i].y;
-                                positions[i * 3 + 2] = wallPositions[i].z;
+                            for (let i = 0; i < wall.positions.length; i++) {
+                                positions[i * 3] = wall.positions[i].x;
+                                positions[i * 3 + 1] = wall.positions[i].y;
+                                positions[i * 3 + 2] = wall.positions[i].z;
                             }
 
                             geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
 
                             const material = new THREE.PointsMaterial({
-                                color: 0xff0000, // Red color for walls
+                                color: wall.color,
                                 size: 0.05,
                                 sizeAttenuation: true,
                                 transparent: true,
                                 opacity: 0.8
                             });
 
-                            wallVisualizationMesh = new THREE.Points(geometry, material);
-                            viewer.threeScene.add(wallVisualizationMesh);
+                            const points = new THREE.Points(geometry, material);
+                            wallVisualizationMesh.add(points);
 
-                            toggleWallBtn.textContent = 'Hide Wall Gaussians';
-                            toggleWallBtn.classList.add('active');
-
-                            console.log('✓ Displaying', wallSplatCount, 'wall gaussian splats from API');
-                        } else {
-                            alert('No wall splats detected in API response! All mask values are false.');
-                            showingWall = false;
+                            console.log(`✓ Wall ${wall.id}: ${wall.gaussianCount} gaussians in ${wall.color}`);
                         }
+
+                        viewer.threeScene.add(wallVisualizationMesh);
+                        toggleWallBtn.textContent = `Hide ${detectedWalls.length} Walls`;
+                        toggleWallBtn.classList.add('active');
+
                     } catch (error) {
                         console.error('Error visualizing wall mask:', error);
-                        alert('Error displaying wall mask: ' + error.message);
+                        alert('Error displaying walls: ' + error.message);
                         showingWall = false;
                     }
                 } else {
@@ -2545,8 +3604,17 @@
                 // Hide wall visualization
                 if (wallVisualizationMesh) {
                     viewer.threeScene.remove(wallVisualizationMesh);
-                    if (wallVisualizationMesh.geometry) wallVisualizationMesh.geometry.dispose();
-                    if (wallVisualizationMesh.material) wallVisualizationMesh.material.dispose();
+
+                    // If it's a group, dispose all children
+                    if (wallVisualizationMesh.isGroup) {
+                        wallVisualizationMesh.children.forEach(child => {
+                            if (child.geometry) child.geometry.dispose();
+                            if (child.material) child.material.dispose();
+                        });
+                    } else {
+                        if (wallVisualizationMesh.geometry) wallVisualizationMesh.geometry.dispose();
+                        if (wallVisualizationMesh.material) wallVisualizationMesh.material.dispose();
+                    }
                     wallVisualizationMesh = null;
                 }
                 toggleWallBtn.textContent = (wallMaskData && Array.isArray(wallMaskData)) ? 'Show Wall Gaussians' : 'Show Wall Detection';
