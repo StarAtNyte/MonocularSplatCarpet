@@ -242,10 +242,13 @@ def process_image(image_bytes: bytes, render_video: bool = False):
         # Convert to numpy
         seg_mask = segmentation.cpu().numpy().astype(np.uint8)
 
-        # In ADE20K: floor is class 3, rug is class 28 (0-indexed)
+        # In ADE20K: floor is class 3, rug is class 28, wall is class 0 (0-indexed)
         # ADE20K class mapping: 0=wall, 1=building, 2=sky, 3=floor, 4=tree, ..., 28=rug, etc.
         floor_classes = [3, 28]  # Floor and rug classes in ADE20K
+        wall_classes = [0]  # Wall class in ADE20K
+
         floor_mask = np.isin(seg_mask, floor_classes).astype(np.uint8) * 255
+        wall_mask = np.isin(seg_mask, wall_classes).astype(np.uint8) * 255
 
         # Save floor mask
         floor_mask_pil = Image.fromarray(floor_mask, mode='L')
@@ -253,9 +256,16 @@ def process_image(image_bytes: bytes, render_video: bool = False):
         floor_mask_pil.save(floor_mask_bytes_io, format='PNG')
         floor_mask_bytes = floor_mask_bytes_io.getvalue()
 
+        # Save wall mask
+        wall_mask_pil = Image.fromarray(wall_mask, mode='L')
+        wall_mask_bytes_io = io.BytesIO()
+        wall_mask_pil.save(wall_mask_bytes_io, format='PNG')
+        wall_mask_bytes = wall_mask_bytes_io.getvalue()
+
         seg_end = time.time()
         print(f"⏱️ Segmentation time: {seg_end - seg_start:.2f}s")
         print(f"Floor+Rug pixels detected: {np.sum(floor_mask > 0)} / {floor_mask.size} ({100 * np.sum(floor_mask > 0) / floor_mask.size:.1f}%)")
+        print(f"Wall pixels detected: {np.sum(wall_mask > 0)} / {wall_mask.size} ({100 * np.sum(wall_mask > 0) / wall_mask.size:.1f}%)")
 
         # Optional: Print unique classes detected for debugging
         unique_classes = np.unique(seg_mask)
@@ -297,6 +307,7 @@ def process_image(image_bytes: bytes, render_video: bool = False):
         ply_bytes = None
         camera_params = None
         floor_gaussian_mask = None
+        wall_gaussian_mask = None
 
         # Find PLY (Gaussian Splat)
         ply_files = list(Path(output_dir).glob("*.ply"))
@@ -320,6 +331,17 @@ def process_image(image_bytes: bytes, render_video: bool = False):
             )
             mapping_end = time.time()
             print(f"⏱️ Floor+Rug-to-Gaussian mapping time: {mapping_end - mapping_start:.2f}s")
+
+            # Map 2D wall mask to actual 3D Gaussians
+            print("Mapping wall mask to actual 3D Gaussians...")
+            wall_mapping_start = time.time()
+            wall_gaussian_mask = map_2d_mask_to_gaussians_from_ply(
+                wall_mask,
+                ply_path,
+                camera_params
+            )
+            wall_mapping_end = time.time()
+            print(f"⏱️ Wall-to-Gaussian mapping time: {wall_mapping_end - wall_mapping_start:.2f}s")
         else:
             raise RuntimeError("No PLY file found in output")
         
@@ -336,10 +358,15 @@ def process_image(image_bytes: bytes, render_video: bool = False):
             "floor_mask_3d": floor_gaussian_mask.tolist(),
             "floor_coverage_2d": float(np.sum(floor_mask > 0) / floor_mask.size),
             "floor_coverage_3d": float(np.sum(floor_gaussian_mask) / len(floor_gaussian_mask)),
+            "wall_mask_2d": base64.b64encode(wall_mask_bytes).decode('utf-8'),
+            "wall_mask_3d": wall_gaussian_mask.tolist(),
+            "wall_coverage_2d": float(np.sum(wall_mask > 0) / wall_mask.size),
+            "wall_coverage_3d": float(np.sum(wall_gaussian_mask) / len(wall_gaussian_mask)),
             "camera": camera_params,
             "gaussian_grid_info": {
                 "total_gaussians": len(floor_gaussian_mask),
                 "floor_rug_gaussians": int(np.sum(floor_gaussian_mask)),
+                "wall_gaussians": int(np.sum(wall_gaussian_mask)),
                 "note": "Sharp creates sparse gaussians, not a dense grid"
             }
         }
@@ -364,10 +391,10 @@ def fastapi_app():
     async def root():
         return {
             "name": "Sharp API",
-            "description": "Monocular View Synthesis - Fast Splat Generation with 2D+3D Floor/Rug Segmentation",
-            "version": "2.1.0",
+            "description": "Monocular View Synthesis - Fast Splat Generation with 2D+3D Floor/Rug/Wall Segmentation",
+            "version": "2.2.0",
             "endpoints": {
-                "/predict": "POST - Upload an image to generate a 3D gaussian splat PLY file with 2D and 3D floor/rug segmentation"
+                "/predict": "POST - Upload an image to generate a 3D gaussian splat PLY file with 2D and 3D floor/rug/wall segmentation"
             },
             "response_format": {
                 "ply": "base64-encoded PLY file (3D Gaussian splat)",
@@ -375,6 +402,10 @@ def fastapi_app():
                 "floor_mask_3d": "boolean array mapping each Gaussian to floor/rug or not",
                 "floor_coverage_2d": "float - percentage of image pixels identified as floor/rug (0.0 to 1.0)",
                 "floor_coverage_3d": "float - percentage of Gaussians identified as floor/rug (0.0 to 1.0)",
+                "wall_mask_2d": "base64-encoded PNG image (binary wall mask at image resolution)",
+                "wall_mask_3d": "boolean array mapping each Gaussian to wall or not",
+                "wall_coverage_2d": "float - percentage of image pixels identified as wall (0.0 to 1.0)",
+                "wall_coverage_3d": "float - percentage of Gaussians identified as wall (0.0 to 1.0)",
                 "camera": {
                     "intrinsics": {"fx": "float", "fy": "float", "cx": "float", "cy": "float"},
                     "extrinsics": {"position": "[x, y, z]", "matrix": "4x4 transformation matrix"},
@@ -382,7 +413,8 @@ def fastapi_app():
                 },
                 "gaussian_grid_info": {
                     "total_gaussians": "int - total number of Gaussians in the splat (sparse, not a dense grid)",
-                    "floor_rug_gaussians": "int - number of Gaussians identified as floor or rug"
+                    "floor_rug_gaussians": "int - number of Gaussians identified as floor or rug",
+                    "wall_gaussians": "int - number of Gaussians identified as wall"
                 }
             }
         }

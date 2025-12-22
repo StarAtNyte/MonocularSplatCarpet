@@ -226,65 +226,6 @@
         .progressBarOuterContainer {
             display: none !important;
         }
-
-        /* Radio button styling */
-        .view-type-container {
-            margin-top: 8px;
-            margin-bottom: 8px;
-        }
-
-        .view-type-container>label {
-            display: block;
-            margin-bottom: 6px;
-            color: #ebebeb;
-            font-size: 11px;
-            font-weight: 500;
-        }
-
-        .radio-group {
-            display: flex;
-            gap: 0;
-            background: #2a2a2a;
-            border: 1px solid #3a3a3a;
-            border-radius: 4px;
-            padding: 2px;
-        }
-
-        .radio-option {
-            flex: 1;
-            position: relative;
-        }
-
-        .radio-option input[type="radio"] {
-            position: absolute;
-            opacity: 0;
-            width: 0;
-            height: 0;
-        }
-
-        .radio-label {
-            display: block;
-            padding: 6px 12px;
-            text-align: center;
-            font-size: 11px;
-            font-weight: 500;
-            color: #ababab;
-            background: transparent;
-            border-radius: 3px;
-            cursor: pointer;
-            transition: all 0.15s ease;
-            user-select: none;
-        }
-
-        .radio-option input[type="radio"]:checked+.radio-label {
-            background: #1f1f1f;
-            color: #ebebeb;
-            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-        }
-
-        .radio-label:hover {
-            color: #ebebeb;
-        }
     </style>
 </head>
 
@@ -308,20 +249,6 @@
             <label>Generate Splat from Image:</label>
             <input type="file" id="generateSplatInput" accept="image/*">
 
-            <div class="view-type-container">
-                <label>Camera View Type:</label>
-                <div class="radio-group">
-                    <div class="radio-option">
-                        <input type="radio" name="viewType" value="front" id="viewFront" checked>
-                        <label for="viewFront" class="radio-label">Front View</label>
-                    </div>
-                    <div class="radio-option">
-                        <input type="radio" name="viewType" value="top" id="viewTop">
-                        <label for="viewTop" class="radio-label">Top View</label>
-                    </div>
-                </div>
-            </div>
-
             <button class="btn" id="generateSplatBtn" disabled>Generate Splat</button>
             <button class="btn" id="downloadPlyBtn" disabled style="margin-top: 8px;">Download PLY File</button>
         </div>
@@ -341,6 +268,7 @@
             <input type="file" id="rugImageInput" accept="image/*">
         </div>
         <button class="btn" id="toggleFloorBtn" disabled>Show Floor Detection</button>
+        <button class="btn" id="toggleWallBtn" disabled>Show Wall Detection</button>
         <div id="status"></div>
     </div>
 
@@ -395,6 +323,7 @@
         // API generated splat data
         let generatedSplatData = null;
         let floorMaskData = null;
+        let wallMaskData = null;
         let floorOrientation = 'horizontal'; // 'horizontal' or 'vertical'
         let selectedImageFile = null;
 
@@ -479,6 +408,7 @@
                 // Store base64 data (not decoded yet - we'll decode in chunks later)
                 generatedSplatData = result.ply;
                 floorMaskData = result.floor_mask_3d; // This is a boolean array, not base64
+                wallMaskData = result.wall_mask_3d; // This is a boolean array, not base64
 
                 console.log('Response size:', receivedLength, 'bytes (', (receivedLength / 1024 / 1024).toFixed(2), 'MB)');
 
@@ -487,20 +417,21 @@
                     console.log('Floor mask 3D received:', result.floor_mask_3d.length, 'values');
                     console.log('Floor coverage 3D:', (result.floor_coverage_3d * 100).toFixed(1) + '%');
                 }
+                // Log wall mask info
+                if (result.wall_mask_3d) {
+                    console.log('Wall mask 3D received:', result.wall_mask_3d.length, 'values');
+                    console.log('Wall coverage 3D:', (result.wall_coverage_3d * 100).toFixed(1) + '%');
+                }
                 if (result.gaussian_grid_info) {
                     console.log('Gaussian grid info:', result.gaussian_grid_info);
                 }
 
-                // Get user-selected view type
-                const viewType = document.querySelector('input[name="viewType"]:checked').value;
-
-                // Set floor orientation based on view type
-                // Top view = camera looking down → floor is vertical plane (perpendicular to view)
-                // Front view = camera looking forward → floor is horizontal plane (ground)
-                floorOrientation = viewType === 'top' ? 'vertical' : 'horizontal';
+                // Always use front view / horizontal floor orientation for generated splats
+                const viewType = 'front';
+                floorOrientation = 'horizontal';
 
                 console.log('View type:', viewType, '→ Floor orientation:', floorOrientation);
-                status.innerHTML = `<strong>View: ${viewType === 'top' ? 'Top' : 'Front'} (${floorOrientation})</strong><br>Loading splat...`;
+                status.innerHTML = `<strong>Loading splat...</strong>`;
 
                 // Load the generated splat
                 loadGeneratedSplat();
@@ -539,8 +470,16 @@
 
                 status.textContent = 'Cleaning up old scene...';
 
+                // Save mask data before cleanup (cleanup clears these but we need them!)
+                const savedFloorMask = floorMaskData;
+                const savedWallMask = wallMaskData;
+
                 // Clean up old scene
                 cleanupScene();
+
+                // Restore mask data after cleanup
+                floorMaskData = savedFloorMask;
+                wallMaskData = savedWallMask;
 
                 // Remove old splat
                 if (viewer.splatMesh) {
@@ -570,6 +509,11 @@
                 const toggleFloorBtn = document.getElementById('toggleFloorBtn');
                 toggleFloorBtn.disabled = false;
                 toggleFloorBtn.textContent = (floorMaskData && Array.isArray(floorMaskData)) ? 'Show Floor Plane' : 'Show Floor Detection';
+
+                // Enable wall detection button with appropriate text
+                const toggleWallBtn = document.getElementById('toggleWallBtn');
+                toggleWallBtn.disabled = false;
+                toggleWallBtn.textContent = (wallMaskData && Array.isArray(wallMaskData)) ? 'Show Wall Gaussians' : 'Show Wall Detection';
 
                 // Camera controls enabled
                 viewer.controls.enabled = true;
@@ -1992,9 +1936,9 @@
                 // FOR LOCAL SPLATS: Use RANSAC with orientation
                 console.log('=== USING RANSAC FOR LOCAL SPLAT ===');
 
-                // Get user-selected view type from radio buttons
-                const viewType = document.querySelector('input[name="viewType"]:checked').value;
-                floorOrientation = viewType === 'top' ? 'vertical' : 'horizontal';
+                // Always use front view / horizontal orientation for local splats
+                const viewType = 'front';
+                floorOrientation = 'horizontal';
                 console.log('Floor detection using view type:', viewType, '→ orientation:', floorOrientation);
 
                 const targetSampleCount = 20000;
@@ -2221,11 +2165,31 @@
             }
             floorPlaneVisible = false;
 
+            // Remove floor visualization mesh
+            if (floorVisualizationMesh && viewer.threeScene) {
+                viewer.threeScene.remove(floorVisualizationMesh);
+                if (floorVisualizationMesh.geometry) floorVisualizationMesh.geometry.dispose();
+                if (floorVisualizationMesh.material) floorVisualizationMesh.material.dispose();
+                floorVisualizationMesh = null;
+            }
+
+            // Remove wall visualization mesh
+            if (wallVisualizationMesh && viewer.threeScene) {
+                viewer.threeScene.remove(wallVisualizationMesh);
+                if (wallVisualizationMesh.geometry) wallVisualizationMesh.geometry.dispose();
+                if (wallVisualizationMesh.material) wallVisualizationMesh.material.dispose();
+                wallVisualizationMesh = null;
+            }
+
             // Clear detected plane
             detectedPlane = null;
 
             // Clear custom rug texture
             customRugTexture = null;
+
+            // Clear mask data
+            floorMaskData = null;
+            wallMaskData = null;
 
             // Reset rug params
             rugParams.visible = true;
@@ -2495,6 +2459,98 @@
                 }
                 toggleFloorBtn.textContent = (floorMaskData && Array.isArray(floorMaskData)) ? 'Show Floor Gaussians' : 'Show Floor Detection';
                 toggleFloorBtn.classList.remove('active');
+            }
+        });
+
+        // Wall detection toggle button
+        const toggleWallBtn = document.getElementById('toggleWallBtn');
+        let wallVisualizationMesh = null;
+        let showingWall = false;
+
+        toggleWallBtn.addEventListener('click', () => {
+            if (!splatLoaded || !viewer.splatMesh) {
+                alert('Please load a splat scene first!');
+                return;
+            }
+
+            showingWall = !showingWall;
+
+            if (showingWall) {
+                // Check if we have wall mask data from API (for generated splats)
+                if (wallMaskData && Array.isArray(wallMaskData)) {
+                    try {
+                        // Wall mask is a boolean array (true/false for each Gaussian)
+                        const splatCount = viewer.splatMesh.getSplatCount();
+                        console.log('Wall mask 3D size:', wallMaskData.length, 'Splat count:', splatCount);
+
+                        // Count wall splats and collect their positions
+                        let wallSplatCount = 0;
+                        const wallPositions = [];
+                        const center = new THREE.Vector3();
+
+                        for (let i = 0; i < Math.min(wallMaskData.length, splatCount); i++) {
+                            if (wallMaskData[i]) { // Boolean value: true = wall
+                                viewer.splatMesh.getSplatCenter(i, center);
+                                wallPositions.push(center.clone());
+                                wallSplatCount++;
+                            }
+                        }
+
+                        console.log('Wall splats detected by API:', wallSplatCount, '/', splatCount,
+                            '(' + ((wallSplatCount / splatCount) * 100).toFixed(1) + '%)');
+
+                        if (wallSplatCount > 0) {
+                            // Create point cloud visualization of wall splats
+                            const geometry = new THREE.BufferGeometry();
+                            const positions = new Float32Array(wallSplatCount * 3);
+
+                            for (let i = 0; i < wallSplatCount; i++) {
+                                positions[i * 3] = wallPositions[i].x;
+                                positions[i * 3 + 1] = wallPositions[i].y;
+                                positions[i * 3 + 2] = wallPositions[i].z;
+                            }
+
+                            geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+                            const material = new THREE.PointsMaterial({
+                                color: 0xff0000, // Red color for walls
+                                size: 0.05,
+                                sizeAttenuation: true,
+                                transparent: true,
+                                opacity: 0.8
+                            });
+
+                            wallVisualizationMesh = new THREE.Points(geometry, material);
+                            viewer.threeScene.add(wallVisualizationMesh);
+
+                            toggleWallBtn.textContent = 'Hide Wall Gaussians';
+                            toggleWallBtn.classList.add('active');
+
+                            console.log('✓ Displaying', wallSplatCount, 'wall gaussian splats from API');
+                        } else {
+                            alert('No wall splats detected in API response! All mask values are false.');
+                            showingWall = false;
+                        }
+                    } catch (error) {
+                        console.error('Error visualizing wall mask:', error);
+                        alert('Error displaying wall mask: ' + error.message);
+                        showingWall = false;
+                    }
+                } else {
+                    // No wall detection for local splats yet
+                    alert('Wall detection is only available for API-generated splats!');
+                    showingWall = false;
+                }
+            } else {
+                // Hide wall visualization
+                if (wallVisualizationMesh) {
+                    viewer.threeScene.remove(wallVisualizationMesh);
+                    if (wallVisualizationMesh.geometry) wallVisualizationMesh.geometry.dispose();
+                    if (wallVisualizationMesh.material) wallVisualizationMesh.material.dispose();
+                    wallVisualizationMesh = null;
+                }
+                toggleWallBtn.textContent = (wallMaskData && Array.isArray(wallMaskData)) ? 'Show Wall Gaussians' : 'Show Wall Detection';
+                toggleWallBtn.classList.remove('active');
             }
         });
 
