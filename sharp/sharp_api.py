@@ -90,63 +90,97 @@ def extract_camera_params(ply_path: Path) -> dict:
 
     return camera_params
 
-def map_2d_mask_to_gaussians(floor_mask_2d, original_shape, internal_shape=(1536, 1536), stride=2):
-    """Map a 2D floor mask to 3D Gaussian indices.
+def map_2d_mask_to_gaussians_from_ply(floor_mask_2d, ply_path, camera_params):
+    """Map a 2D floor mask to actual 3D Gaussians by projecting their positions.
 
     Args:
         floor_mask_2d: Binary floor mask at original image resolution (H x W), values 0-255
-        original_shape: Tuple of (height, width) of original image
-        internal_shape: Tuple of (height, width) of Sharp's internal processing resolution
-        stride: Stride used by Sharp to downsample when creating Gaussians (default=2)
+        ply_path: Path to the PLY file containing gaussian positions
+        camera_params: Camera intrinsics and extrinsics for projection
 
     Returns:
-        floor_gaussian_mask: Binary mask indicating which Gaussians are floor (num_gaussians,)
+        floor_gaussian_mask: Binary mask indicating which Gaussians are floor (num_actual_gaussians,)
     """
-    import torch
-    import torch.nn.functional as F
+    import numpy as np
+    from plyfile import PlyData
 
-    # Convert floor mask to tensor and ensure it's binary (0 or 1)
-    floor_mask_tensor = torch.from_numpy(floor_mask_2d).float() / 255.0  # Normalize to [0, 1]
-    floor_mask_tensor = floor_mask_tensor.unsqueeze(0).unsqueeze(0)  # Add batch and channel dims [1, 1, H, W]
+    try:
+        # Read gaussian positions from PLY
+        ply_data = PlyData.read(str(ply_path))
+        vertex_data = ply_data['vertex']
 
-    # Resize floor mask to Sharp's internal processing resolution (1536x1536)
-    # Use nearest neighbor to preserve binary nature
-    floor_mask_resized = F.interpolate(
-        floor_mask_tensor,
-        size=(internal_shape[1], internal_shape[0]),
-        mode='nearest'
-    )
+        num_gaussians = len(vertex_data)
+        print(f"Found {num_gaussians} gaussians in PLY file")
 
-    # Downsample to Gaussian grid resolution using max pooling
-    # This ensures we capture floor regions - if any pixel in a stride×stride block is floor, mark it as floor
-    gaussian_grid_height = internal_shape[1] // stride
-    gaussian_grid_width = internal_shape[0] // stride
+        # Extract positions (x, y, z)
+        positions = np.stack([vertex_data['x'], vertex_data['y'], vertex_data['z']], axis=-1)
 
-    floor_gaussian_grid = F.max_pool2d(
-        floor_mask_resized,
-        kernel_size=stride,
-        stride=stride
-    )  # Shape: [1, 1, 768, 768] for default settings
+        # Validate camera params
+        if not camera_params or 'intrinsics' not in camera_params or 'image_size' not in camera_params:
+            print("WARNING: Missing camera params, using default projection")
+            # Fallback: just mark all gaussians as non-floor
+            return np.zeros(num_gaussians, dtype=bool)
 
-    # Flatten to match Gaussian ordering
-    # Sharp creates Gaussians in a grid, with multiple layers
-    # Each spatial position has num_layers Gaussians (default=2)
-    floor_gaussian_mask = floor_gaussian_grid.squeeze()  # Shape: [768, 768]
+        # Get camera intrinsics
+        fx = camera_params['intrinsics']['fx']
+        fy = camera_params['intrinsics']['fy']
+        cx = camera_params['intrinsics']['cx']
+        cy = camera_params['intrinsics']['cy']
 
-    # Flatten to 1D mask
-    floor_gaussian_mask_1d = floor_gaussian_mask.flatten()  # Shape: [768*768]
+        # Get image dimensions
+        img_height = camera_params['image_size']['height']
+        img_width = camera_params['image_size']['width']
 
-    # Convert to boolean mask (threshold at 0.5)
-    floor_gaussian_mask_bool = floor_gaussian_mask_1d > 0.5
+        print(f"Camera intrinsics: fx={fx}, fy={fy}, cx={cx}, cy={cy}")
+        print(f"Image size: {img_width}x{img_height}")
+        print(f"Floor mask shape: {floor_mask_2d.shape}")
 
-    return floor_gaussian_mask_bool.cpu().numpy()
+        # Project 3D positions to 2D image coordinates
+        # For Sharp's coordinate system: camera at origin looking down +Z
+        # Standard pinhole projection: u = fx * (x/z) + cx, v = fy * (y/z) + cy
+        z = positions[:, 2]
+
+        # Avoid division by zero
+        valid_depth = z > 0.01  # Gaussians must be in front of camera
+
+        u = fx * (positions[:, 0] / np.maximum(z, 0.01)) + cx
+        v = fy * (positions[:, 1] / np.maximum(z, 0.01)) + cy
+
+        # Convert to integer pixel coordinates
+        u_px = np.round(u).astype(int)
+        v_px = np.round(v).astype(int)
+
+        # Check if pixels are within image bounds
+        in_bounds = (u_px >= 0) & (u_px < img_width) & (v_px >= 0) & (v_px < img_height) & valid_depth
+
+        # Create floor mask for gaussians
+        floor_gaussian_mask = np.zeros(num_gaussians, dtype=bool)
+
+        # For each gaussian, check if its projected pixel is floor
+        for i in range(num_gaussians):
+            if in_bounds[i]:
+                # Check floor mask at projected pixel location
+                is_floor = floor_mask_2d[v_px[i], u_px[i]] > 127  # Threshold at mid-gray
+                floor_gaussian_mask[i] = is_floor
+
+        print(f"Gaussians in bounds: {np.sum(in_bounds)} / {num_gaussians}")
+        print(f"Floor gaussians: {np.sum(floor_gaussian_mask)} / {num_gaussians} ({100 * np.sum(floor_gaussian_mask) / num_gaussians:.1f}%)")
+
+        return floor_gaussian_mask
+
+    except Exception as e:
+        print(f"ERROR in map_2d_mask_to_gaussians_from_ply: {e}")
+        import traceback
+        traceback.print_exc()
+        # Return empty mask on error
+        return np.zeros(len(ply_data['vertex']) if 'ply_data' in locals() else 0, dtype=bool)
 
 @app.function(
     image=image,
-    gpu="A100",  # Upgraded from T4 for higher quality 2048x2048 processing
+    gpu="A100",  # Upgraded from T4 for higher quality processing
     volumes={CACHE_DIR: models_volume},
     timeout=600,  # 10 minutes should be enough
-    container_idle_timeout=600  # Keep container alive for 5 minutes after last request
+    container_idle_timeout=600  # Keep container alive for 10 minutes after last request
 )
 def process_image(image_bytes: bytes, render_video: bool = False):
     import torch
@@ -227,33 +261,8 @@ def process_image(image_bytes: bytes, render_video: bool = False):
         unique_classes = np.unique(seg_mask)
         print(f"Detected classes: {unique_classes}")
 
-        # Map 2D floor+rug mask to 3D Gaussians
-        print("Mapping floor+rug mask to 3D Gaussians...")
-        mapping_start = time.time()
-
-        # Sharp processes at 2048x2048 internal resolution with stride=2
-        # This creates a 1024x1024 grid of Gaussians (2048/2 = 1024)
-        # Sharp uses num_layers=2, so each spatial position has 2 Gaussians
-        floor_gaussian_mask_single_layer = map_2d_mask_to_gaussians(
-            floor_mask,
-            original_shape=pil_image.size[::-1],  # (height, width)
-            internal_shape=(2048, 2048),  # Updated from 1536 for higher quality
-            stride=2
-        )
-
-        # Replicate for both layers (Sharp uses 2 layers by default)
-        # CRITICAL FIX: Gaussians are interleaved by layer, not concatenated
-        # Each spatial position (i, j) has num_layers Gaussians:
-        # [pos_0_layer_0, pos_0_layer_1, pos_1_layer_0, pos_1_layer_1, ...]
-        # NOT: [all_layer_0, all_layer_1]
-        num_layers = 2
-        
-        # Interleave the mask: repeat each element num_layers times
-        floor_gaussian_mask = np.repeat(floor_gaussian_mask_single_layer, num_layers)
-
-        mapping_end = time.time()
-        print(f"⏱️ Floor+Rug-to-Gaussian mapping time: {mapping_end - mapping_start:.2f}s")
-        print(f"Floor+Rug Gaussians: {np.sum(floor_gaussian_mask)} / {len(floor_gaussian_mask)} ({100 * np.sum(floor_gaussian_mask) / len(floor_gaussian_mask):.1f}%)")
+        # NOTE: We'll map the floor mask AFTER getting the PLY file
+        # since we need the actual gaussian positions and camera params
 
         # Construct command
         # sharp predict -i <input_dir> -o <output_dir>
@@ -265,11 +274,13 @@ def process_image(image_bytes: bytes, render_video: bool = False):
         inference_start = time.time()
         try:
             # Run sharp
-            subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            result = subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            print("Sharp stdout:", result.stdout)
+            print("Sharp stderr:", result.stderr)
         except subprocess.CalledProcessError as e:
             print("Error running sharp:")
-            print(e.stdout)
-            print(e.stderr)
+            print("STDOUT:", e.stdout)
+            print("STDERR:", e.stderr)
             raise RuntimeError(f"Sharp execution failed: {e.stderr}")
         
         inference_end = time.time()
@@ -285,6 +296,7 @@ def process_image(image_bytes: bytes, render_video: bool = False):
         
         ply_bytes = None
         camera_params = None
+        floor_gaussian_mask = None
 
         # Find PLY (Gaussian Splat)
         ply_files = list(Path(output_dir).glob("*.ply"))
@@ -297,6 +309,17 @@ def process_image(image_bytes: bytes, render_video: bool = False):
             # Extract camera parameters from PLY file
             camera_params = extract_camera_params(ply_path)
             print(f"Extracted camera parameters: {camera_params}")
+
+            # Now map 2D floor mask to actual 3D Gaussians using their positions
+            print("Mapping floor+rug mask to actual 3D Gaussians...")
+            mapping_start = time.time()
+            floor_gaussian_mask = map_2d_mask_to_gaussians_from_ply(
+                floor_mask,
+                ply_path,
+                camera_params
+            )
+            mapping_end = time.time()
+            print(f"⏱️ Floor+Rug-to-Gaussian mapping time: {mapping_end - mapping_start:.2f}s")
         else:
             raise RuntimeError("No PLY file found in output")
         
@@ -316,9 +339,8 @@ def process_image(image_bytes: bytes, render_video: bool = False):
             "camera": camera_params,
             "gaussian_grid_info": {
                 "total_gaussians": len(floor_gaussian_mask),
-                "num_layers": num_layers,
-                "grid_resolution": [1024, 1024],  # internal_shape / stride (2048/2)
-                "floor_rug_gaussians": int(np.sum(floor_gaussian_mask))
+                "floor_rug_gaussians": int(np.sum(floor_gaussian_mask)),
+                "note": "Sharp creates sparse gaussians, not a dense grid"
             }
         }
 
@@ -343,7 +365,7 @@ def fastapi_app():
         return {
             "name": "Sharp API",
             "description": "Monocular View Synthesis - Fast Splat Generation with 2D+3D Floor/Rug Segmentation",
-            "version": "2.0.0",
+            "version": "2.1.0",
             "endpoints": {
                 "/predict": "POST - Upload an image to generate a 3D gaussian splat PLY file with 2D and 3D floor/rug segmentation"
             },
@@ -359,9 +381,7 @@ def fastapi_app():
                     "image_size": {"width": "int", "height": "int"}
                 },
                 "gaussian_grid_info": {
-                    "total_gaussians": "int - total number of Gaussians in the splat",
-                    "num_layers": "int - number of depth layers (default: 2)",
-                    "grid_resolution": "[width, height] - spatial resolution of Gaussian grid",
+                    "total_gaussians": "int - total number of Gaussians in the splat (sparse, not a dense grid)",
                     "floor_rug_gaussians": "int - number of Gaussians identified as floor or rug"
                 }
             }
@@ -379,3 +399,4 @@ def fastapi_app():
         return result
     
     return app
+
