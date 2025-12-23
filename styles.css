@@ -1,0 +1,497 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    overflow: hidden;
+    background: #000;
+}
+
+#controls {
+    position: fixed;
+    top: 20px;
+    left: 20px;
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    width: 280px;
+}
+
+.btn {
+    padding: 10px 16px;
+    font-size: 12px;
+    font-weight: 500;
+    color: #ebebeb;
+    background: #1f1f1f;
+    border: 1px solid #3a3a3a;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    text-align: left;
+}
+
+.btn:hover:not(:disabled) {
+    background: #2a2a2a;
+    border-color: #4a4a4a;
+}
+
+.btn:active:not(:disabled) {
+    background: #252525;
+}
+
+.btn:disabled {
+    background: #181818;
+    color: #6e6e6e;
+    border-color: #2a2a2a;
+    cursor: not-allowed;
+}
+
+#rugUploadContainer,
+#splatSelectContainer,
+#rugSelectContainer,
+#generateSplatContainer {
+    padding: 10px;
+    background: #1f1f1f;
+    border-radius: 4px;
+    border: 1px solid #3a3a3a;
+    overflow: hidden;
+}
+
+#rugUploadContainer label,
+#splatSelectContainer label,
+#rugSelectContainer label,
+#generateSplatContainer label {
+    color: #ebebeb;
+    font-size: 11px;
+    display: block;
+    margin-bottom: 6px;
+    font-weight: 500;
+}
+
+#rugImageInput,
+#generateSplatInput {
+    font-size: 11px;
+    color: #ebebeb;
+    width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#generateSplatBtn {
+    margin-top: 8px;
+    width: 100%;
+}
+
+#splatSelect,
+#rugSelect {
+    width: 100%;
+    padding: 6px 12px;
+    background: #2a2a2a;
+    border: 1px solid #3a3a3a;
+    border-radius: 3px;
+    color: #ebebeb;
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+#splatSelect:hover,
+#rugSelect:hover {
+    background: #333;
+    border-color: #4a4a4a;
+}
+
+#splatSelect:focus,
+#rugSelect:focus {
+    outline: none;
+    border-color: #5a5a5a;
+}
+
+#rugImageInput::file-selector-button,
+#generateSplatInput::file-selector-button {
+    padding: 6px 12px;
+    background: #2a2a2a;
+    border: 1px solid #3a3a3a;
+    border-radius: 3px;
+    color: #ebebeb;
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+    margin-right: 8px;
+    transition: all 0.15s ease;
+}
+
+#rugImageInput::file-selector-button:hover,
+#generateSplatInput::file-selector-button:hover {
+    background: #333;
+    border-color: #4a4a4a;
+}
+
+#status {
+    padding: 10px 12px;
+    background: #1f1f1f;
+    color: #ebebeb;
+    border-radius: 4px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 11px;
+    line-height: 1.5;
+    border: 1px solid #3a3a3a;
+    display: none;
+    word-wrap: break-word;
+}
+
+#status.loading {
+    animation: pulse 2s ease-in-out infinite;
+    border-color: #4a90e2;
+}
+
+@keyframes pulse {
+
+    0%,
+    100% {
+        opacity: 1;
+        border-color: #4a90e2;
+    }
+
+    50% {
+        opacity: 0.8;
+        border-color: #6ab0ff;
+    }
+}
+
+#fpsHint {
+    padding: 8px 12px;
+    background: #1a2a1a;
+    color: #90ee90;
+    border-radius: 4px;
+    font-size: 11px;
+    border: 1px solid #2a4a2a;
+    text-align: center;
+}
+
+#instructions {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1000;
+    padding: 10px 16px;
+    background: rgba(31, 31, 31, 0.9);
+    color: #ebebeb;
+    border-radius: 4px;
+    font-size: 12px;
+    border: 1px solid #3a3a3a;
+    text-align: center;
+    backdrop-filter: blur(10px);
+}
+
+#instructions kbd {
+    background: #2a2a2a;
+    border: 1px solid #4a4a4a;
+    border-radius: 3px;
+    padding: 2px 6px;
+    font-family: monospace;
+    font-size: 11px;
+    font-weight: bold;
+}
+
+.lil-gui {
+    --width: 320px;
+    --widget-height: 20px;
+    --name-width: 22%;
+    --number-width: 40px;
+    --slider-input-width: 40px;
+    --slider-input-min-width: 40px;
+}
+
+.lil-gui.root {
+    width: var(--width);
+    top: 20px !important;
+    right: 20px !important;
+    z-index: 3000 !important;
+    position: fixed !important;
+}
+
+.progressBarOuterContainer {
+    display: none !important;
+}
+
+/* Sidebar Styles */
+#wallDecorSidebar,
+#rugSidebar {
+    position: fixed;
+    top: 0;
+    right: -280px;
+    width: 280px;
+    height: 100vh;
+    background: rgba(31, 31, 31, 0.95);
+    border-left: 1px solid #3a3a3a;
+    z-index: 2000;
+    transition: right 0.3s ease;
+    backdrop-filter: blur(10px);
+    display: flex;
+    flex-direction: column;
+}
+
+#wallDecorSidebar.open,
+#rugSidebar.open {
+    right: 0;
+}
+
+#wallDecorSidebar .sidebar-header,
+#rugSidebar .sidebar-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px 20px 12px 20px;
+    border-bottom: 1px solid #3a3a3a;
+    flex-shrink: 0;
+}
+
+#wallDecorSidebar .sidebar-header h2,
+#rugSidebar .sidebar-header h2 {
+    color: #ebebeb;
+    font-size: 18px;
+    font-weight: 600;
+    margin: 0;
+}
+
+#wallDecorSidebar .close-btn,
+#rugSidebar .close-btn {
+    background: none;
+    border: none;
+    color: #ebebeb;
+    font-size: 24px;
+    cursor: pointer;
+    padding: 0;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    transition: background 0.15s ease;
+}
+
+#wallDecorSidebar .close-btn:hover,
+#rugSidebar .close-btn:hover {
+    background: #2a2a2a;
+}
+
+#wallDecorGrid,
+#rugGrid {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    padding: 20px;
+    overflow-y: auto;
+    flex: 1;
+    /* Ensure content doesn't get hidden behind sticky footer if scrolling is tight */
+    padding-bottom: 80px;
+}
+
+/* Optional: Use 2 columns for more compact layout */
+/* Uncomment the following to enable 2-column grid:
+#wallDecorGrid,
+#rugGrid {
+    grid-template-columns: repeat(2, 1fr);
+}
+*/
+
+/* Sticky Upload Button */
+.upload-custom-btn {
+    position: sticky;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 16px 20px;
+    background: rgba(26, 26, 26, 0.98);
+    border-top: 1px solid #3a3a3a;
+    cursor: pointer;
+    transition: background 0.2s ease;
+    flex-shrink: 0;
+    backdrop-filter: blur(10px);
+}
+
+.upload-custom-btn:hover {
+    background: rgba(42, 42, 42, 0.98);
+}
+
+.upload-custom-btn input[type="file"] {
+    display: none;
+}
+
+.upload-custom-btn span {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #4a90e2;
+    font-weight: 500;
+    font-size: 14px;
+    gap: 8px;
+}
+
+.upload-custom-btn span:before {
+    content: '📁';
+    font-size: 18px;
+}
+
+.wall-decor-item,
+.rug-item {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 1;
+    border: 2px solid #3a3a3a;
+    border-radius: 6px;
+    overflow: hidden;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    background: #2a2a2a;
+    flex-shrink: 0;
+}
+
+.wall-decor-item:hover,
+.rug-item:hover {
+    border-color: #4a90e2;
+    transform: scale(1.02);
+    z-index: 10;
+}
+
+.wall-decor-item.selected,
+.rug-item.selected {
+    border-color: #4a90e2;
+    box-shadow: 0 0 0 2px rgba(74, 144, 226, 0.3);
+}
+
+.wall-decor-item img,
+.rug-item img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.wall-decor-item .decor-name,
+.rug-item .rug-name {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: rgba(0, 0, 0, 0.7);
+    color: #ebebeb;
+    padding: 6px 8px;
+    font-size: 11px;
+    text-align: center;
+    font-weight: 500;
+}
+
+#openWallDecorBtn,
+#openRugBtn {
+    background: linear-gradient(135deg, #4a90e2 0%, #357abd 100%);
+    border-color: #357abd;
+    font-weight: 600;
+}
+
+#openWallDecorBtn:hover:not(:disabled),
+#openRugBtn:hover:not(:disabled) {
+    background: linear-gradient(135deg, #5aa0f2 0%, #4585c7 100%);
+    border-color: #4585c7;
+}
+
+/* Debug Panel Styles */
+.debug-panel-container {
+    background: linear-gradient(135deg, rgba(31, 31, 31, 0.95) 0%, rgba(25, 25, 25, 0.95) 100%);
+    border: 1px solid rgba(74, 144, 226, 0.3);
+    border-radius: 8px;
+    padding: 16px;
+    margin-top: 12px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(10px);
+}
+
+.debug-panel-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #4a90e2;
+    font-size: 13px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 2px solid rgba(74, 144, 226, 0.3);
+}
+
+.debug-icon {
+    font-size: 16px;
+    filter: drop-shadow(0 0 8px rgba(74, 144, 226, 0.6));
+}
+
+.debug-panel-section {
+    margin-bottom: 12px;
+}
+
+.debug-panel-section:last-child {
+    margin-bottom: 0;
+}
+
+.debug-section-title {
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 8px;
+    padding-left: 4px;
+}
+
+.debug-btn {
+    width: 100%;
+    margin-bottom: 6px;
+    background: rgba(42, 42, 42, 0.8);
+    border-color: rgba(74, 144, 226, 0.2);
+    transition: all 0.2s ease;
+}
+
+.debug-btn:last-child {
+    margin-bottom: 0;
+}
+
+.debug-btn:hover:not(:disabled) {
+    background: rgba(52, 52, 52, 0.9);
+    border-color: rgba(74, 144, 226, 0.5);
+    box-shadow: 0 0 12px rgba(74, 144, 226, 0.2);
+}
+
+.debug-btn:disabled {
+    background: rgba(24, 24, 24, 0.6);
+    border-color: rgba(58, 58, 58, 0.4);
+}
+
+.export-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    background: linear-gradient(135deg, rgba(74, 144, 226, 0.15) 0%, rgba(53, 122, 189, 0.15) 100%);
+    border-color: rgba(74, 144, 226, 0.4);
+    font-weight: 600;
+}
+
+.export-btn:hover:not(:disabled) {
+    background: linear-gradient(135deg, rgba(74, 144, 226, 0.25) 0%, rgba(53, 122, 189, 0.25) 100%);
+    border-color: rgba(74, 144, 226, 0.6);
+    box-shadow: 0 0 16px rgba(74, 144, 226, 0.3);
+}
+
+.btn-icon {
+    font-size: 14px;
+    filter: drop-shadow(0 0 6px rgba(74, 144, 226, 0.4));
+}

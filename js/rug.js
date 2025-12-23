@@ -1,0 +1,752 @@
+import * as THREE from 'three';
+import { GUI } from 'lil-gui';
+import {
+    viewer, rug, detectedPlane, gui, rugParams, gizmoRing, gizmoHandle,
+    cornerHandles, gizmoVisible, raycaster, isDragging, isRotating, isResizing,
+    activeCorner, offset, previousMouse, initialScale, initialDistance,
+    oppositeCornerWorld, draggedCornerWorld, initialRugCenter, generatedSplatData,
+    lastCameraPosition, cameraMovementThreshold, wallDecor,
+    setRug, setGui, setGizmoRing, setGizmoHandle, setCornerHandles,
+    setGizmoVisible, setIsDragging, setIsRotating, setIsResizing,
+    setActiveCorner, setPreviousMouse, setInitialScale, setInitialDistance,
+    setOppositeCornerWorld, setDraggedCornerWorld, setInitialRugCenter,
+    setLastCameraPosition, raycastMouseOnRug, raycastMouseOnWallDecor
+} from './utils.js';
+import { detectFloor } from './floorDetection.js';
+
+
+// ========== HELPER FUNCTIONS ==========
+
+function placeRugOnHorizontalFloor(plane, cameraPos, cameraDir) {
+    // ALWAYS use simple floor centroid placement (works for both generated and local splats with masks)
+    console.log('Placing rug at floor centroid (mask-based detection)');
+
+    let position = plane.centroid.clone();
+
+    // Add small offset along floor normal to place rug slightly above the floor plane
+    const rugHeightOffset = 0.001; // 0.1cm above the detected floor plane
+    position.add(plane.normal.clone().multiplyScalar(rugHeightOffset));
+
+    console.log('Rug position at floor centroid:', position);
+
+    position.x += rugParams.offsetX;
+    position.y += rugParams.offsetY;
+    position.z += rugParams.offsetZ;
+
+    rug.position.copy(position);
+
+    const up = new THREE.Vector3(0, 0, 1);
+    const quaternion = new THREE.Quaternion().setFromUnitVectors(up, plane.normal);
+    rug.quaternion.copy(quaternion);
+
+    const rotationQuat = new THREE.Quaternion().setFromAxisAngle(plane.normal, rugParams.rotation * Math.PI / 180);
+    rug.quaternion.premultiply(rotationQuat);
+
+    rug.scale.set(rugParams.scale, rugParams.scale, rugParams.scale);
+    rug.visible = rugParams.visible;
+}
+
+function placeRugOnWall(plane, cameraPos, cameraDir) {
+    const wallPlane = new THREE.Plane().setFromNormalAndCoplanarPoint(plane.normal, plane.centroid);
+    const distToWall = wallPlane.distanceToPoint(cameraPos);
+
+    let position = plane.centroid.clone();
+    position.y = cameraPos.y;
+
+    const autoZOffset = -0.04;
+    position.z += autoZOffset;
+
+    position.x += rugParams.offsetX;
+    position.y += rugParams.offsetY;
+    position.z += rugParams.offsetZ;
+
+    rug.position.copy(position);
+
+    const up = new THREE.Vector3(0, 0, 1);
+    const quaternion = new THREE.Quaternion().setFromUnitVectors(up, plane.normal);
+    rug.quaternion.copy(quaternion);
+
+    const rotationQuat = new THREE.Quaternion().setFromAxisAngle(plane.normal, rugParams.rotation * Math.PI / 180);
+    rug.quaternion.premultiply(rotationQuat);
+
+    rug.scale.set(rugParams.scale, rugParams.scale, rugParams.scale);
+    rug.visible = rugParams.visible;
+}
+
+function updateRugPosition() {
+    if (!rug || !detectedPlane) return;
+
+    const plane = detectedPlane;
+    const position = plane.centroid.clone();
+
+    position.x += rugParams.offsetX;
+    position.y += rugParams.offsetY;
+    position.z += rugParams.offsetZ;
+
+    rug.position.copy(position);
+    updateGizmo();
+}
+
+function updateRug(skipPositionRecalc = false) {
+    if (!skipPositionRecalc) {
+        placeRugOnFloor();
+    } else {
+        if (!rug || !detectedPlane) return;
+
+        const plane = detectedPlane;
+        const up = new THREE.Vector3(0, 0, 1);
+        const quaternion = new THREE.Quaternion().setFromUnitVectors(up, plane.normal);
+        rug.quaternion.copy(quaternion);
+
+        const rotationQuat = new THREE.Quaternion().setFromAxisAngle(plane.normal, rugParams.rotation * Math.PI / 180);
+        rug.quaternion.premultiply(rotationQuat);
+
+        rug.scale.set(rugParams.scale, rugParams.scale, rugParams.scale);
+        rug.visible = rugParams.visible;
+    }
+    updateGizmo();
+}
+
+function updateGizmo(show = true) {
+    if (!gizmoRing || !gizmoHandle || !rug || !rug.visible) {
+        if (gizmoRing) gizmoRing.visible = false;
+        if (gizmoHandle) gizmoHandle.visible = false;
+        cornerHandles.forEach(corner => corner.visible = false);
+        setGizmoVisible(false);
+        return;
+    }
+
+    gizmoRing.visible = show;
+    gizmoHandle.visible = show;
+    cornerHandles.forEach(corner => corner.visible = show);
+    setGizmoVisible(show);
+}
+
+function findGizmoIntersection(event) {
+    if (!gizmoRing || !gizmoHandle || !rug) return false;
+
+    const rect = viewer.renderer.domElement.getBoundingClientRect();
+    const mouse = new THREE.Vector2();
+    mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+    raycaster.setFromCamera(mouse, viewer.camera);
+    const intersects = raycaster.intersectObjects([gizmoRing, gizmoHandle], false);
+    return intersects.length > 0;
+}
+
+function findCornerIntersection(event) {
+    if (!rug || cornerHandles.length === 0) return null;
+
+    const rect = viewer.renderer.domElement.getBoundingClientRect();
+    const mouse = new THREE.Vector2();
+    mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+    raycaster.setFromCamera(mouse, viewer.camera);
+    const intersects = raycaster.intersectObjects(cornerHandles, true);
+    if (intersects.length > 0) {
+        let obj = intersects[0].object;
+        while (obj && obj.userData.cornerIndex === undefined) {
+            obj = obj.parent;
+        }
+        if (obj && obj.userData.cornerIndex !== undefined) {
+            return obj.userData.cornerIndex;
+        }
+    }
+    return null;
+}
+
+// Placeholder for wall decor interaction (referenced in mouse handlers)
+function handleWallDecorMouseDown(event) {
+    // This will be handled by wallDecor module
+}
+
+function handleWallDecorMouseMove(event) {
+    // This will be handled by wallDecor module
+}
+
+// ========== MAIN EXPORTED FUNCTIONS ==========
+
+export function createRug(textureUrl) {
+    return new Promise((resolve, reject) => {
+        const textureLoader = new THREE.TextureLoader();
+        textureLoader.load(textureUrl, (texture) => {
+            if (rug && viewer.threeScene) {
+                viewer.threeScene.remove(rug);
+                rug.geometry.dispose();
+                rug.material.dispose();
+            }
+
+            // Cleanup old gizmo
+            if (gizmoRing) {
+                gizmoRing.geometry.dispose();
+                gizmoRing.material.dispose();
+                setGizmoRing(null);
+            }
+            if (gizmoHandle) {
+                gizmoHandle.geometry.dispose();
+                gizmoHandle.material.dispose();
+                setGizmoHandle(null);
+            }
+
+            const rugWidth = 2;
+            const aspectRatio = texture.image.height / texture.image.width;
+            const rugHeight = rugWidth * aspectRatio;
+
+            // Use BoxGeometry instead of PlaneGeometry to give the rug thickness/depth
+            const rugDepth = 0.01; // Add some thickness to the rug 
+            const geometry = new THREE.BoxGeometry(rugWidth, rugHeight, rugDepth);
+            const material = new THREE.MeshBasicMaterial({
+                map: texture,
+                side: THREE.DoubleSide,
+                transparent: true
+            });
+
+            const rugMesh = new THREE.Mesh(geometry, material);
+            rugMesh.visible = rugParams.visible;
+            setRug(rugMesh);
+
+            // Create 3D gizmo as child of rug
+            const smallerDim = Math.min(rugWidth, rugHeight);
+            const ringRadius = smallerDim * 0.25; // Smaller ring
+            const tubeRadius = 0.015;
+            const gizmoHeight = 0.20; // Higher above rug surface
+
+            // Darker steel color for visibility
+            const steelColor = 0x4a4a4a;
+
+            // Create ring gizmo
+            const ringGeometry = new THREE.TorusGeometry(ringRadius, tubeRadius, 8, 48);
+            const ringMaterial = new THREE.MeshBasicMaterial({
+                color: steelColor,
+                transparent: true,
+                opacity: 0.8,
+                depthTest: false,
+                depthWrite: false
+            });
+            const gizmoRingMesh = new THREE.Mesh(ringGeometry, ringMaterial);
+            gizmoRingMesh.renderOrder = 999;
+            gizmoRingMesh.position.set(0, 0, gizmoHeight);
+            gizmoRingMesh.visible = false;
+            setGizmoRing(gizmoRingMesh);
+
+            // Create diamond handle at the bottom of the ring for rotation indicator
+            const handleGeometry = new THREE.OctahedronGeometry(0.06, 0);
+            const handleMaterial = new THREE.MeshBasicMaterial({
+                color: steelColor, // Same stainless steel color
+                transparent: true,
+                opacity: 0.9,
+                depthTest: false,
+                depthWrite: false
+            });
+            const gizmoHandleMesh = new THREE.Mesh(handleGeometry, handleMaterial);
+            gizmoHandleMesh.renderOrder = 1000;
+            gizmoHandleMesh.position.set(0, -ringRadius, gizmoHeight); // At bottom of ring
+            gizmoHandleMesh.scale.set(1.5, 1, 0.6); // Flatten to diamond shape
+            gizmoHandleMesh.visible = false;
+            setGizmoHandle(gizmoHandleMesh);
+
+            // Create corner resize handles (small white squares with black outline like MS Paint)
+            const newCornerHandles = [];
+            const cornerZ = rugDepth / 2 + 0.05; // Higher above the rug surface for visibility
+            const cornerPositions = [
+                { x: rugWidth / 2, y: rugHeight / 2 },   // Top-right
+                { x: -rugWidth / 2, y: rugHeight / 2 },  // Top-left
+                { x: -rugWidth / 2, y: -rugHeight / 2 }, // Bottom-left
+                { x: rugWidth / 2, y: -rugHeight / 2 }   // Bottom-right
+            ];
+
+            const handleSize = 0.08; // Larger square size for visibility
+            const outlineThickness = 0.01; // Outline thickness
+
+            // Black outline (slightly larger box behind)
+            const outlineGeometry = new THREE.BoxGeometry(
+                handleSize + outlineThickness * 2,
+                handleSize + outlineThickness * 2,
+                0.01
+            );
+            const outlineMaterial = new THREE.MeshBasicMaterial({
+                color: 0x000000,
+                depthTest: false,
+                depthWrite: false,
+                side: THREE.DoubleSide
+            });
+
+            // White fill (smaller box in front)
+            const cornerGeometry = new THREE.BoxGeometry(handleSize, handleSize, 0.01);
+            const cornerMaterial = new THREE.MeshBasicMaterial({
+                color: 0xffffff,
+                depthTest: false,
+                depthWrite: false,
+                side: THREE.DoubleSide
+            });
+
+            cornerPositions.forEach((pos, index) => {
+                // Create a group for the corner handle
+                const cornerGroup = new THREE.Group();
+                cornerGroup.position.set(pos.x, pos.y, cornerZ);
+                cornerGroup.visible = false;
+                cornerGroup.userData.cornerIndex = index;
+
+                // Add black outline box
+                const outline = new THREE.Mesh(outlineGeometry, outlineMaterial.clone());
+                outline.renderOrder = 999;
+                cornerGroup.add(outline);
+
+                // Add white fill box (slightly in front)
+                const fill = new THREE.Mesh(cornerGeometry, cornerMaterial.clone());
+                fill.position.z = 0.006;
+                fill.renderOrder = 1000;
+                cornerGroup.add(fill);
+
+                newCornerHandles.push(cornerGroup);
+                rugMesh.add(cornerGroup);
+            });
+            setCornerHandles(newCornerHandles);
+
+            // Add gizmo as children of rug
+            rugMesh.add(gizmoRingMesh);
+            rugMesh.add(gizmoHandleMesh);
+
+            if (viewer.threeScene) {
+                viewer.threeScene.add(rugMesh);
+            }
+
+            resolve(rugMesh);
+        }, undefined, reject);
+    });
+}
+
+export function placeRugOnFloor() {
+    if (!rug || !detectedPlane) return;
+
+    const plane = detectedPlane;
+
+    // Get camera position and forward direction
+    const cameraPos = viewer.camera.position.clone();
+    const cameraDir = new THREE.Vector3();
+    viewer.camera.getWorldDirection(cameraDir);
+
+    // Detect if this is a vertical plane (wall) based on normal
+    const isVerticalPlane = Math.abs(plane.normal.y) < 0.3;
+
+    if (isVerticalPlane) {
+        console.log('Placing rug on VERTICAL surface (wall)');
+        placeRugOnWall(plane, cameraPos, cameraDir);
+    } else {
+        console.log('Placing rug on HORIZONTAL surface (floor)');
+        placeRugOnHorizontalFloor(plane, cameraPos, cameraDir);
+    }
+
+    // Debug logging
+    console.log('Rug placed! Properties:');
+    console.log('  - Position:', rug.position);
+    console.log('  - Visible:', rug.visible);
+    console.log('  - Scale:', rug.scale);
+    console.log('  - In scene:', viewer.threeScene.children.includes(rug));
+}
+
+export function setupRugGUI() {
+    if (gui) gui.destroy();
+
+    const newGui = new GUI();
+    newGui.title('Rug Controls');
+    setGui(newGui);
+
+    newGui.add(rugParams, 'visible').name('Visible').onChange(() => {
+        if (rug) {
+            rug.visible = rugParams.visible;
+            updateGizmo(rugParams.visible);
+        }
+    });
+
+    const posFolder = newGui.addFolder('Position Offset');
+    posFolder.add(rugParams, 'offsetX', -3, 3, 0.01).name('X').onChange(() => updateRugPosition());
+    posFolder.add(rugParams, 'offsetY', -0.5, 0.5, 0.001).name('Y').onChange(() => updateRugPosition());
+    posFolder.add(rugParams, 'offsetZ', -3, 3, 0.01).name('Z').onChange(() => updateRugPosition());
+    posFolder.open();
+
+    const transformFolder = newGui.addFolder('Transform');
+    transformFolder.add(rugParams, 'rotation', 0, 360, 1).name('Rotation (°)').onChange(() => updateRug(true));
+    transformFolder.add(rugParams, 'scale', 0.1, 10, 0.01).name('Scale').onChange(() => updateRug(true));
+    transformFolder.open();
+}
+
+export function removeCurrentRug() {
+    // Remove rug if exists
+    if (rug && viewer.threeScene) {
+        viewer.threeScene.remove(rug);
+        if (rug.geometry) rug.geometry.dispose();
+        if (rug.material) {
+            if (rug.material.map) rug.material.map.dispose();
+            rug.material.dispose();
+        }
+        setRug(null);
+    }
+
+    // Destroy GUI if exists
+    if (gui) {
+        gui.destroy();
+        setGui(null);
+    }
+
+    // Clear gizmo
+    if (gizmoRing) {
+        gizmoRing.geometry.dispose();
+        gizmoRing.material.dispose();
+        setGizmoRing(null);
+    }
+    if (gizmoHandle) {
+        gizmoHandle.geometry.dispose();
+        gizmoHandle.material.dispose();
+        setGizmoHandle(null);
+    }
+    // Clear corner handles
+    cornerHandles.forEach(cornerGroup => {
+        cornerGroup.children.forEach(child => {
+            if (child.geometry) child.geometry.dispose();
+            if (child.material) child.material.dispose();
+        });
+    });
+    setCornerHandles([]);
+    setGizmoVisible(false);
+}
+
+export async function placeRugAuto(rugTextureUrl) {
+    const status = document.getElementById('status');
+
+    // Check if camera has moved significantly since last rug placement
+    const currentCameraPos = viewer.camera.position.clone();
+    let cameraMoved = false;
+
+    if (lastCameraPosition) {
+        const distance = currentCameraPos.distanceTo(lastCameraPosition);
+        cameraMoved = distance > cameraMovementThreshold;
+        console.log('Camera movement distance:', distance, 'Threshold:', cameraMovementThreshold, 'Moved:', cameraMoved);
+    }
+
+    // Save current rug's actual world position before removing (not offsets!)
+    // Only save if camera hasn't moved significantly
+    const savedPosition = (rug && !cameraMoved) ? rug.position.clone() : null;
+    const savedParams = (rug && !cameraMoved) ? {
+        rotation: rugParams.rotation,
+        scale: rugParams.scale
+    } : null;
+
+    // Remove old rug if exists
+    removeCurrentRug();
+
+    status.textContent = 'Detecting floor...';
+    status.style.display = 'block';
+
+    try {
+        // First detect the floor (only if not already detected)
+        if (!detectedPlane) {
+            const floorDetected = await detectFloor();
+            if (!floorDetected) {
+                return;
+            }
+        }
+
+        // Then create and place the rug
+        status.textContent = 'Placing rug...';
+        await createRug(rugTextureUrl);
+
+        // Restore saved parameters if replacing an existing rug AND camera hasn't moved
+        if (savedPosition && savedParams) {
+            // Place rug at exact same world position
+            rug.position.copy(savedPosition);
+
+            // Calculate offsets relative to floor centroid
+            const plane = detectedPlane;
+            const basePosition = plane.centroid.clone();
+
+            rugParams.offsetX = savedPosition.x - basePosition.x;
+            rugParams.offsetY = savedPosition.y - basePosition.y;
+            rugParams.offsetZ = savedPosition.z - basePosition.z;
+            rugParams.rotation = savedParams.rotation;
+            rugParams.scale = savedParams.scale;
+
+            // Apply rotation and orientation
+            const up = new THREE.Vector3(0, 0, 1);
+            const quaternion = new THREE.Quaternion().setFromUnitVectors(up, plane.normal);
+            rug.quaternion.copy(quaternion);
+
+            const rotationQuat = new THREE.Quaternion().setFromAxisAngle(plane.normal, rugParams.rotation * Math.PI / 180);
+            rug.quaternion.premultiply(rotationQuat);
+
+            rug.scale.set(rugParams.scale, rugParams.scale, rugParams.scale);
+            rug.visible = rugParams.visible;
+
+            console.log('Rug replaced at saved position:', savedPosition);
+        } else {
+            // First rug OR camera moved - place based on current camera position
+            // Reset offsets since we're calculating a fresh position
+            rugParams.offsetX = 0;
+            rugParams.offsetY = 0;
+            rugParams.offsetZ = 0;
+
+            placeRugOnFloor();
+
+            // Save current camera position
+            lastCameraPosition = currentCameraPos;
+            console.log('Rug placed at new position based on camera. Camera position saved:', lastCameraPosition);
+        }
+
+        setupRugGUI();
+        updateGizmo();
+        status.textContent = 'Rug placed! Use controls on the right to adjust. Hover over rug to see gizmo. Hover over the corners for resizing.';
+    } catch (error) {
+        status.textContent = `Error: ${error.message}`;
+    }
+}
+
+export function onRugMouseDown(event) {
+    // Check wall decor first (higher priority if both exist)
+    if (wallDecor && wallDecor.visible) {
+        handleWallDecorMouseDown(event);
+        if (isDragging || isRotating || isResizing) return;
+    }
+
+    // Then check rug
+    if (!rug || !rug.visible) return;
+
+    // Check if clicking on corner handle (for resizing)
+    const cornerIndex = findCornerIntersection(event);
+    if (cornerIndex !== null) {
+        setIsResizing(true);
+        setIsDragging(false);
+        setIsRotating(false);
+        setActiveCorner(cornerIndex);
+        setInitialScale(rugParams.scale);
+        setInitialRugCenter(rug.position.clone());
+
+        // Get opposite corner index (0<->2, 1<->3)
+        const oppositeIndex = (cornerIndex + 2) % 4;
+
+        // Get corner world positions
+        const oppCornerWorld = new THREE.Vector3();
+        cornerHandles[oppositeIndex].getWorldPosition(oppCornerWorld);
+        setOppositeCornerWorld(oppCornerWorld);
+
+        const dragCornerWorld = new THREE.Vector3();
+        cornerHandles[cornerIndex].getWorldPosition(dragCornerWorld);
+        setDraggedCornerWorld(dragCornerWorld);
+
+        // Store initial distance between corners
+        setInitialDistance(oppCornerWorld.distanceTo(dragCornerWorld));
+
+        viewer.controls.enabled = false;
+        viewer.renderer.domElement.style.cursor = 'nwse-resize';
+        event.preventDefault();
+        return;
+    }
+
+    // Check if clicking on gizmo (for rotation)
+    if (findGizmoIntersection(event)) {
+        setIsRotating(true);
+        setIsDragging(false);
+        setIsResizing(false);
+        setPreviousMouse({ x: event.clientX, y: event.clientY });
+        viewer.controls.enabled = false;
+        viewer.renderer.domElement.style.cursor = 'grabbing';
+        event.preventDefault();
+        return;
+    }
+
+    // Check if clicking on rug (for dragging)
+    const intersect = raycastMouseOnRug(event);
+    if (intersect) {
+        setIsDragging(true);
+        setIsRotating(false);
+        setIsResizing(false);
+
+        // Calculate offset using floor plane intersection, not rug intersection
+        // This ensures consistent behavior on tilted floors
+        const rect = viewer.renderer.domElement.getBoundingClientRect();
+        const mouse = new THREE.Vector2();
+        mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+        mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+        raycaster.setFromCamera(mouse, viewer.camera);
+
+        // Raycast to the floor plane at the rug's position
+        const floorPlane = new THREE.Plane();
+        floorPlane.setFromNormalAndCoplanarPoint(detectedPlane.normal, rug.position);
+
+        const floorPoint = new THREE.Vector3();
+        raycaster.ray.intersectPlane(floorPlane, floorPoint);
+
+        if (floorPoint) {
+            // Calculate offset from floor intersection to rug center
+            offset.copy(floorPoint).sub(rug.position);
+        } else {
+            // Fallback to old method if raycast fails
+            offset.copy(intersect.point).sub(rug.position);
+        }
+
+        viewer.controls.enabled = false;
+        viewer.renderer.domElement.style.cursor = 'grabbing';
+        event.preventDefault();
+    }
+}
+
+export function onRugMouseMove(event) {
+    // Handle wall decor interactions
+    if (wallDecor && wallDecor.visible && (isDragging || isRotating || isResizing)) {
+        handleWallDecorMouseMove(event);
+        return;
+    }
+
+    if (!rug || !rug.visible) return;
+
+    if (isResizing) {
+        // Raycast to floor plane to find mouse position in 3D space
+        const rect = viewer.renderer.domElement.getBoundingClientRect();
+        const mouse = new THREE.Vector2();
+        mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+        mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+        raycaster.setFromCamera(mouse, viewer.camera);
+
+        // Create a plane at the rug's current position with the floor normal
+        const floorPlane = new THREE.Plane();
+        floorPlane.setFromNormalAndCoplanarPoint(detectedPlane.normal, rug.position);
+
+        // Find intersection point on the floor plane
+        const mouseWorldPos = new THREE.Vector3();
+        raycaster.ray.intersectPlane(floorPlane, mouseWorldPos);
+
+        if (mouseWorldPos) {
+            // Calculate new distance from opposite corner to mouse
+            const currentDistance = oppositeCornerWorld.distanceTo(mouseWorldPos);
+
+            // Calculate scale ratio
+            const scaleRatio = currentDistance / initialDistance;
+            const newScale = Math.max(0.1, Math.min(10, initialScale * scaleRatio));
+            rugParams.scale = newScale;
+
+            // Calculate new rug center position
+            // The center should be midway between the opposite corner and the mouse position
+            const newCenter = new THREE.Vector3().addVectors(oppositeCornerWorld, mouseWorldPos).multiplyScalar(0.5);
+
+            // Preserve the original Y position - don't let resizing change height
+            newCenter.y = rug.position.y;
+
+            // Update offset parameters to reflect the new position
+            const initialPos = detectedPlane.centroid.clone();
+
+            rugParams.offsetX = newCenter.x - initialPos.x;
+            // Don't update offsetY - keep rug at same height when resizing
+            rugParams.offsetZ = newCenter.z - initialPos.z;
+
+            // Update position directly, then apply rotation and scale without recalculating position
+            rug.position.copy(newCenter);
+            updateRug(true);
+
+            if (gui) {
+                gui.controllersRecursive().forEach(controller => controller.updateDisplay());
+            }
+        }
+
+        event.preventDefault();
+    } else if (isRotating) {
+        const deltaX = previousMouse.x - event.clientX;
+        rugParams.rotation += deltaX;
+        if (rugParams.rotation < 0) rugParams.rotation += 360;
+        if (rugParams.rotation >= 360) rugParams.rotation -= 360;
+
+        updateRug(true); // Skip position recalculation, only update rotation
+
+        if (gui) {
+            gui.controllersRecursive().forEach(controller => controller.updateDisplay());
+        }
+
+        setPreviousMouse({ x: event.clientX, y: event.clientY });
+        event.preventDefault();
+    } else if (isDragging) {
+        // Raycast onto the floor plane instead of the rug for accurate dragging
+        const rect = viewer.renderer.domElement.getBoundingClientRect();
+        const mouse = new THREE.Vector2();
+        mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+        mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+        raycaster.setFromCamera(mouse, viewer.camera);
+
+        // Create a plane at the rug's current position with the floor normal
+        const floorPlane = new THREE.Plane();
+        floorPlane.setFromNormalAndCoplanarPoint(detectedPlane.normal, rug.position);
+
+        // Find intersection point on the floor plane
+        const mouseWorldPos = new THREE.Vector3();
+        const intersected = raycaster.ray.intersectPlane(floorPlane, mouseWorldPos);
+
+        if (intersected && mouseWorldPos) {
+            const newPos = mouseWorldPos.clone().sub(offset);
+
+            // Let the plane intersection handle positioning - it automatically keeps the rug
+            // on the floor whether it's horizontal, vertical, or tilted
+            // No need to fix individual coordinates - the plane constraint handles everything
+
+            rug.position.copy(newPos);
+
+            // Update the offset params to match
+            const initialPos = detectedPlane.centroid.clone();
+
+            rugParams.offsetX = newPos.x - initialPos.x;
+            rugParams.offsetY = newPos.y - initialPos.y;
+            rugParams.offsetZ = newPos.z - initialPos.z;
+
+            if (gui) {
+                gui.controllersRecursive().forEach(controller => controller.updateDisplay());
+            }
+
+            updateGizmo();
+            event.preventDefault();
+        }
+    } else {
+        // Check wall decor hover first
+        if (wallDecor && wallDecor.visible) {
+            const wallIntersect = raycastMouseOnWallDecor(event);
+            if (wallIntersect) {
+                viewer.renderer.domElement.style.cursor = 'move';
+                return;
+            }
+        }
+
+        // Then check rug hover
+        const cornerIndex = findCornerIntersection(event);
+        if (cornerIndex !== null) {
+            updateGizmo(true);
+            viewer.renderer.domElement.style.cursor = 'nwse-resize';
+        } else if (findGizmoIntersection(event)) {
+            updateGizmo(true);
+            viewer.renderer.domElement.style.cursor = 'grab';
+        } else {
+            const intersect = raycastMouseOnRug(event);
+            if (intersect) {
+                updateGizmo(true);
+                viewer.renderer.domElement.style.cursor = 'move';
+            } else {
+                updateGizmo(false);
+                viewer.renderer.domElement.style.cursor = 'default';
+            }
+        }
+    }
+}
+
+export function onRugMouseUp(event) {
+    if (isDragging || isRotating || isResizing) {
+        setIsDragging(false);
+        setIsRotating(false);
+        setIsResizing(false);
+        setActiveCorner(null);
+        setOppositeCornerWorld(null);
+        setDraggedCornerWorld(null);
+        setInitialRugCenter(null);
+        viewer.controls.enabled = true; // Re-enable controls after interaction
+        viewer.renderer.domElement.style.cursor = 'default';
+        event.preventDefault();
+    }
+}

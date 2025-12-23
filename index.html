@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Splat Carpet - Rug Placement Viewer (Better Floor Detection)</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+
+    <div id="controls">
+        <div id="splatSelectContainer">
+            <label>Select Room Scene:</label>
+            <select id="splatSelect">
+                <option value="splats/room1" selected>Room 1</option>
+                <option value="splats/room2">Room 2</option>
+                <option value="splats/room3">Room 3</option>
+            </select>
+        </div>
+        <div id="generateSplatContainer">
+            <label>Generate Splat from Image:</label>
+            <input type="file" id="generateSplatInput" accept="image/*">
+            <button class="btn" id="generateSplatBtn" disabled>Generate Splat</button>
+            <button class="btn" id="downloadPlyBtn" disabled style="margin-top: 8px;">Download as ZIP</button>
+        </div>
+        <button class="btn" id="openRugBtn">Place Rug</button>
+        <button class="btn" id="openWallDecorBtn">Place Wall Decor</button>
+
+        <!-- Hidden Debug Panel -->
+        <div id="debugPanel" style="display: none;">
+            <div class="debug-panel-container">
+                <div class="debug-panel-header">
+                    <span class="debug-icon">🔧</span>
+                    <span>Debug Controls</span>
+                </div>
+                <div class="debug-panel-section">
+                    <div class="debug-section-title">Camera & Visualization</div>
+                    <button class="btn debug-btn" id="cameraLockBtn">Unlock Camera</button>
+                    <button class="btn debug-btn" id="toggleFloorBtn" disabled>Show Floor Detection</button>
+                    <button class="btn debug-btn" id="toggleWallBtn" disabled>Show Wall Detection</button>
+                    <button class="btn debug-btn" id="showWallClustersBtn" disabled>Show Wall Clusters</button>
+                </div>
+                <div class="debug-panel-section">
+                    <div class="debug-section-title">Export</div>
+                    <button class="btn debug-btn export-btn" id="debugDownloadPlyBtn" disabled>
+                        <span class="btn-icon">📦</span>
+                        <span>Download as ZIP</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <div id="status"></div>
+    </div>
+
+    <!-- Wall Decor Sidebar -->
+    <div id="wallDecorSidebar">
+        <div class="sidebar-header">
+            <h2>Wall Decor</h2>
+            <button class="close-btn" id="closeWallDecorBtn">&times;</button>
+        </div>
+        <div id="wallDecorGrid">
+            <!-- Wall decor items will be populated here -->
+        </div>
+        <label class="upload-custom-btn">
+            <input type="file" id="customWallDecorInput" accept="image/*">
+            <span>+ Upload Custom Decor</span>
+        </label>
+    </div>
+
+    <!-- Rug Sidebar -->
+    <div id="rugSidebar">
+        <div class="sidebar-header">
+            <h2>Select Rug</h2>
+            <button class="close-btn" id="closeRugBtn">&times;</button>
+        </div>
+        <div id="rugGrid">
+            <!-- Rug items will be populated here -->
+        </div>
+        <label class="upload-custom-btn">
+            <input type="file" id="customRugInput" accept="image/*">
+            <span>+ Upload Custom Rug</span>
+        </label>
+    </div>
+
+    <div id="instructions">
+        Press <kbd>H</kbd> to hide/show controls
+    </div>
+
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+            "lil-gui": "https://cdn.jsdelivr.net/npm/lil-gui@0.19.2/+esm",
+            "jszip": "https://cdn.jsdelivr.net/npm/jszip@3.10.1/+esm"
+        }
+    }
+    </script>
+
+    <script type="module" src="js/main.js"></script>
+</body>
+
+</html>
