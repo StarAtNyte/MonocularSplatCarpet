@@ -20,6 +20,8 @@ let wallDecorGizmoRing = null;
 let wallDecorGizmoHandle = null;
 let wallDecorCornerHandles = [];
 let wallDecorGizmoVisible = false;
+let wallDecorPreview = null; // Preview mesh that follows cursor
+let hoveredWallInPlacementMode = null; // Currently hovered wall during placement
 
 // ========== GIZMO CREATION ==========
 
@@ -188,6 +190,146 @@ function findWallDecorCornerIntersection(event) {
         }
     }
     return null;
+}
+
+// ========== PREVIEW CREATION ==========
+
+function createWallDecorPreview() {
+    if (!wallDecor) {
+        console.error('❌ Cannot create preview: wallDecor is null');
+        return;
+    }
+
+    console.log('🎨 Creating wall decor preview...');
+
+    // Clone the wall decor mesh for preview
+    const previewGeometry = wallDecor.geometry.clone();
+    const previewMaterial = wallDecor.material.clone();
+    previewMaterial.transparent = true;
+    previewMaterial.opacity = 0.5;
+    previewMaterial.depthTest = false;
+    previewMaterial.depthWrite = false;
+
+    wallDecorPreview = new THREE.Mesh(previewGeometry, previewMaterial);
+    wallDecorPreview.visible = false;
+    wallDecorPreview.renderOrder = 998; // Render behind gizmos but in front of scene
+    wallDecorPreview.scale.copy(wallDecor.scale);
+
+    if (viewer.threeScene) {
+        viewer.threeScene.add(wallDecorPreview);
+    }
+
+    console.log('✅ Wall decor preview created and added to scene');
+}
+
+function removeWallDecorPreview() {
+    if (wallDecorPreview && viewer.threeScene) {
+        viewer.threeScene.remove(wallDecorPreview);
+        if (wallDecorPreview.geometry) wallDecorPreview.geometry.dispose();
+        if (wallDecorPreview.material) wallDecorPreview.material.dispose();
+        wallDecorPreview = null;
+    }
+}
+
+function updateWallDecorPreview(event) {
+    if (!wallDecorPreview || !isWallSelectionMode) return;
+
+    const rect = viewer.renderer.domElement.getBoundingClientRect();
+    const mouse = new THREE.Vector2();
+    mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+    raycaster.setFromCamera(mouse, viewer.camera);
+
+    // Try to find intersection with wall clusters
+    let foundValidWall = false;
+    let closestIntersection = null;
+    let closestWall = null;
+
+    for (const wall of wallClusters) {
+        // Create a plane for this wall
+        const wallPlane = new THREE.Plane().setFromNormalAndCoplanarPoint(
+            wall.normal.clone(),
+            wall.centroid
+        );
+
+        // Check if ray intersects this wall plane
+        const intersectionPoint = new THREE.Vector3();
+        const intersected = raycaster.ray.intersectPlane(wallPlane, intersectionPoint);
+
+        if (intersected) {
+            // Check if the intersection point is within the wall bounds
+            const worldUp = new THREE.Vector3(0, viewer.camera.up.y < 0 ? -1 : 1, 0);
+            const right = new THREE.Vector3().crossVectors(worldUp, wall.normal).normalize();
+            const up = new THREE.Vector3().crossVectors(wall.normal, right).normalize();
+
+            // Project intersection point onto wall's 2D coordinate system
+            const localPos = intersectionPoint.clone().sub(wall.centroid);
+            const x = localPos.dot(right);
+            const y = localPos.dot(up);
+
+            // Get wall bounds
+            let minX = Infinity, maxX = -Infinity;
+            let minY = Infinity, maxY = -Infinity;
+
+            for (const pos of wall.gaussians) {
+                const gaussianLocal = pos.clone().sub(wall.centroid);
+                const gx = gaussianLocal.dot(right);
+                const gy = gaussianLocal.dot(up);
+                if (gx < minX) minX = gx;
+                if (gx > maxX) maxX = gx;
+                if (gy < minY) minY = gy;
+                if (gy > maxY) maxY = gy;
+            }
+
+            // Add some padding to make it easier to hit
+            const padding = 0.2;
+            minX -= padding;
+            maxX += padding;
+            minY -= padding;
+            maxY += padding;
+
+            // Check if point is within bounds
+            if (x >= minX && x <= maxX && y >= minY && y <= maxY) {
+                const distance = viewer.camera.position.distanceTo(intersectionPoint);
+
+                if (!closestIntersection || distance < viewer.camera.position.distanceTo(closestIntersection)) {
+                    closestIntersection = intersectionPoint;
+                    closestWall = wall;
+                    foundValidWall = true;
+                }
+            }
+        }
+    }
+
+    if (foundValidWall && closestIntersection && closestWall) {
+        // Position preview at intersection point
+        wallDecorPreview.position.copy(closestIntersection);
+
+        // Orient preview to face outward from wall
+        const wallNormal = closestWall.normal.clone();
+        const worldUp = new THREE.Vector3(0, viewer.camera.up.y < 0 ? -1 : 1, 0);
+        const right = new THREE.Vector3().crossVectors(worldUp, wallNormal).normalize();
+        const up = new THREE.Vector3().crossVectors(wallNormal, right).normalize();
+
+        const matrix = new THREE.Matrix4();
+        matrix.makeBasis(right, up, wallNormal);
+        const quaternion = new THREE.Quaternion().setFromRotationMatrix(matrix);
+        wallDecorPreview.quaternion.copy(quaternion);
+
+        // Offset slightly from wall surface
+        wallDecorPreview.position.addScaledVector(wallNormal, 0.05);
+
+        wallDecorPreview.visible = true;
+        wallDecorPreview.material.opacity = 0.7;
+        wallDecorPreview.material.color.setHex(0x4a90e2); // Blue tint for valid placement
+
+        hoveredWallInPlacementMode = closestWall;
+    } else {
+        // No valid wall found - show preview in red or hide it
+        wallDecorPreview.visible = false;
+        hoveredWallInPlacementMode = null;
+    }
 }
 
 // ========== WALL DECOR CREATION AND PLACEMENT ==========
@@ -371,70 +513,182 @@ export function placeWallDecorOnWall(selectedWall = null) {
 // ========== WALL SELECTION MODE ==========
 
 export function startWallSelectionMode() {
+    console.log('🚀 startWallSelectionMode called');
+
     if (wallClusters.length === 0) {
-        console.error('No wall clusters available. Detect walls first.');
+        console.error('❌ No wall clusters available. Detect walls first.');
         return false;
     }
 
     isWallSelectionMode = true;
-    showWallMarkers();
 
-    const status = document.getElementById('status');
-    status.style.display = 'block';
-    status.innerHTML = '<strong>Wall Selection Mode</strong><br>Click on a wall marker to place decor';
+    // Show simple bottom overlay
+    const overlay = document.getElementById('placementOverlay');
+    if (overlay) {
+        overlay.classList.add('active');
+        console.log('✅ Placement overlay shown');
+    }
 
-    console.log('Wall selection mode activated');
+    // Add crosshair cursor
+    document.body.classList.add('placement-mode');
+
+    // Add ESC key listener
+    const escHandler = (e) => {
+        if (e.key === 'Escape' && isWallSelectionMode) {
+            console.log('🚫 ESC key pressed');
+            exitWallSelectionMode();
+        }
+    };
+    document.addEventListener('keydown', escHandler);
+    window._placementEscHandler = escHandler;
+
+    console.log('✅ Wall selection mode activated');
     return true;
 }
 
 export function exitWallSelectionMode() {
+    console.log('🚫 exitWallSelectionMode called');
+
     isWallSelectionMode = false;
-    clearWallMarkers();
 
-    const status = document.getElementById('status');
-    status.style.display = 'none';
+    // Hide overlay
+    const overlay = document.getElementById('placementOverlay');
+    if (overlay) {
+        overlay.classList.remove('active');
+    }
 
-    console.log('Wall selection mode deactivated');
+    // Remove crosshair cursor
+    document.body.classList.remove('placement-mode');
+
+    // Remove ESC key listener
+    if (window._placementEscHandler) {
+        document.removeEventListener('keydown', window._placementEscHandler);
+        window._placementEscHandler = null;
+    }
+
+    console.log('✅ Wall selection mode deactivated');
+}
+
+export function handleWallHover(event) {
+    // Deprecated: Wall hover is now handled by updateWallDecorPreview in placement mode
+    // This function is kept for backwards compatibility with ui.js
+    return;
 }
 
 export function handleWallClick(event) {
     if (!isWallSelectionMode) return false;
 
-    const selectedWall = raycastWallMarkers(event);
-    if (selectedWall) {
-        console.log(`Wall ${selectedWall.id} selected`);
+    const rect = viewer.renderer.domElement.getBoundingClientRect();
+    const mouse = new THREE.Vector2();
+    mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
-        wallDecorParams.offsetX = 0;
-        wallDecorParams.offsetY = 0;
-        // offsetZ will be set automatically based on distance in placeWallDecorOnWall
+    raycaster.setFromCamera(mouse, viewer.camera);
+
+    // Find which wall was clicked
+    let closestWall = null;
+    let closestDistance = Infinity;
+    let closestClickPoint = null;
+
+    for (const wall of wallClusters) {
+        const wallPlane = new THREE.Plane().setFromNormalAndCoplanarPoint(
+            wall.normal.clone(),
+            wall.centroid
+        );
+
+        const clickPoint = new THREE.Vector3();
+        const intersected = raycaster.ray.intersectPlane(wallPlane, clickPoint);
+
+        if (intersected) {
+            // Check if click is within wall bounds
+            const worldUp = new THREE.Vector3(0, viewer.camera.up.y < 0 ? -1 : 1, 0);
+            const right = new THREE.Vector3().crossVectors(worldUp, wall.normal).normalize();
+            const up = new THREE.Vector3().crossVectors(wall.normal, right).normalize();
+
+            const localPos = clickPoint.clone().sub(wall.centroid);
+            const x = localPos.dot(right);
+            const y = localPos.dot(up);
+
+            // Get wall bounds
+            let minX = Infinity, maxX = -Infinity;
+            let minY = Infinity, maxY = -Infinity;
+
+            for (const pos of wall.gaussians) {
+                const gaussianLocal = pos.clone().sub(wall.centroid);
+                const gx = gaussianLocal.dot(right);
+                const gy = gaussianLocal.dot(up);
+                if (gx < minX) minX = gx;
+                if (gx > maxX) maxX = gx;
+                if (gy < minY) minY = gy;
+                if (gy > maxY) maxY = gy;
+            }
+
+            // Add padding
+            const padding = 0.2;
+            if (x >= minX - padding && x <= maxX + padding &&
+                y >= minY - padding && y <= maxY + padding) {
+                const distance = viewer.camera.position.distanceTo(clickPoint);
+                if (distance < closestDistance) {
+                    closestDistance = distance;
+                    closestWall = wall;
+                    closestClickPoint = clickPoint;
+                }
+            }
+        }
+    }
+
+    if (closestWall && closestClickPoint) {
+        console.log(`Wall ${closestWall.id} selected via click`);
+
+        // Calculate offsets based on click position
+        const wallNormal = closestWall.normal.clone();
+        const worldUp = new THREE.Vector3(0, viewer.camera.up.y < 0 ? -1 : 1, 0);
+        const right = new THREE.Vector3().crossVectors(worldUp, wallNormal).normalize();
+        const up = new THREE.Vector3().crossVectors(wallNormal, right).normalize();
+
+        // Calculate center of wall
+        let minX = Infinity, maxX = -Infinity;
+        let minY = Infinity, maxY = -Infinity;
+
+        for (const pos of closestWall.gaussians) {
+            const localPos = pos.clone().sub(closestWall.centroid);
+            const x = localPos.dot(right);
+            const y = localPos.dot(up);
+            if (x < minX) minX = x;
+            if (x > maxX) maxX = x;
+            if (y < minY) minY = y;
+            if (y > maxY) maxY = y;
+        }
+
+        const centerX = (minX + maxX) / 2;
+        const centerY = (minY + maxY) / 2;
+
+        const wallCenter = closestWall.centroid.clone();
+        wallCenter.addScaledVector(right, centerX);
+        wallCenter.addScaledVector(up, centerY);
+
+        closestWall.surfaceCenter = wallCenter.clone();
+
+        // Calculate offset from wall center to click point
+        const offsetVector = closestClickPoint.clone().sub(wallCenter);
+        wallDecorParams.offsetX = offsetVector.dot(right);
+        wallDecorParams.offsetY = offsetVector.dot(up);
         wallDecorParams.rotation = 0;
 
-        placeWallDecorOnWall(selectedWall);
-
+        placeWallDecorOnWall(closestWall);
         exitWallSelectionMode();
 
         const status = document.getElementById('status');
-        status.textContent = `Wall decor placed on Wall ${selectedWall.id}!`;
-        setTimeout(() => { status.style.display = 'none'; }, 3000);
+        status.style.display = 'block';
+        status.textContent = `Wall decor placed!`;
+        setTimeout(() => { status.style.display = 'none'; }, 2000);
 
         return true;
     }
 
+    // No valid wall clicked
+    console.log('No valid wall clicked');
     return false;
-}
-
-export function handleWallHover(event) {
-    if (!isWallSelectionMode) return;
-
-    const hoveredWall = raycastWallMarkers(event);
-    resetWallMarkerHighlights();
-
-    if (hoveredWall) {
-        highlightWallMarker(hoveredWall.id);
-        document.body.style.cursor = 'pointer';
-    } else {
-        document.body.style.cursor = 'default';
-    }
 }
 
 // ========== POSITION UPDATE FUNCTIONS ==========
@@ -773,6 +1027,9 @@ export function removeCurrentWallDecor() {
         }
         setWallDecor(null);
     }
+
+    // Clean up preview mesh
+    removeWallDecorPreview();
 
     // Clean up gizmos
     if (wallDecorGizmoRing) {

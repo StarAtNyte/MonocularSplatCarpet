@@ -3,7 +3,8 @@ import {
     splatLoaded, floorPlaneMesh, floorPlaneVisible,
     setFloorPlaneVisible, setCurrentSplatPath, setSplatLoaded,
     wallGaussianPositions, wallClusters, wallClusterHelpers,
-    setWallClusterHelpers, setWallClusters, wallDecor, rug
+    setWallClusterHelpers, setWallClusters, wallDecor, rug,
+    initialCameraState
 } from './utils.js';
 import { generateSplatFromImage, downloadGeneratedPLY, loadSplatFromFolder } from './api.js';
 import { detectFloor, createFloorPlaneVisualization } from './floorDetection.js';
@@ -102,57 +103,100 @@ export async function selectWallDecor(decorPath) {
     // Remove old wall decor
     removeCurrentWallDecor();
 
-    status.textContent = 'Detecting walls...';
-    status.style.display = 'block';
+    // Show loading indicator
+    const loader = document.getElementById('wallDetectionLoader');
+    const backdrop = document.getElementById('wallDetectionBackdrop');
+    const loaderText = loader.querySelector('.loader-text');
+    const loaderSubtext = loader.querySelector('.loader-subtext');
+    const loaderProgress = loader.querySelector('.loader-progress');
+
+    loader.classList.add('active');
+    backdrop.classList.add('active');
 
     try {
         // Detect wall if not already detected
         if (wallGaussianPositions.length === 0) {
+            loaderText.textContent = 'Detecting Walls';
+            loaderSubtext.textContent = 'Analyzing scene geometry...';
+            loaderProgress.textContent = '';
+
             const wallDetected = await detectWall();
             if (!wallDetected) {
+                loader.classList.remove('active');
+                backdrop.classList.remove('active');
+                status.textContent = 'Wall detection failed!';
+                status.style.display = 'block';
                 return;
             }
         }
 
         // Cluster walls if not already done
         if (wallClusters.length === 0) {
-            status.textContent = 'Clustering walls...';
+            loaderText.textContent = 'Clustering Walls';
+            loaderSubtext.textContent = 'Grouping wall surfaces...';
+            loaderProgress.textContent = `Processing ${wallGaussianPositions.length.toLocaleString()} points`;
+
             const cameraPos = viewer.camera.position.clone();
             const minWallWidth = 1.0;
             const clusters = clusterWallsByOrientation(wallGaussianPositions, cameraPos, minWallWidth);
             setWallClusters(clusters);
 
             if (clusters.length === 0) {
+                loader.classList.remove('active');
+                backdrop.classList.remove('active');
                 status.textContent = 'No suitable walls found!';
+                status.style.display = 'block';
                 return;
             }
 
+            loaderProgress.textContent = `Found ${clusters.length} wall${clusters.length > 1 ? 's' : ''}`;
             console.log(`Found ${clusters.length} suitable walls`);
         }
 
         // Create and place the wall decor
-        status.textContent = 'Creating wall decor...';
+        loaderText.textContent = 'Preparing Decor';
+        loaderSubtext.textContent = 'Loading texture and creating preview...';
+        loaderProgress.textContent = '';
+
         await createWallDecor(decorPath);
+        console.log('✅ Wall decor created successfully');
 
         // Reset offsets for new placement
         wallDecorParams.offsetX = 0;
         wallDecorParams.offsetY = 0;
         wallDecorParams.offsetZ = 0.08;
 
+        console.log('🎯 Starting wall selection mode...');
         // Enter wall selection mode
         const selectionStarted = startWallSelectionMode();
+        console.log('Wall selection mode started:', selectionStarted);
+
+        // Hide loader AFTER starting selection mode
+        setTimeout(() => {
+            loader.classList.remove('active');
+            backdrop.classList.remove('active');
+            console.log('✅ Loader hidden');
+        }, 100);
 
         if (selectionStarted) {
             setupWallDecorGUI();
             document.getElementById('wallDecorSidebar').classList.remove('open');
             // Show controls after sidebar closes
             showAllControls();
+            console.log('✅ Wall selection mode fully initialized');
         } else {
+            loader.classList.remove('active');
+            backdrop.classList.remove('active');
             status.textContent = 'Error: Could not start wall selection';
+            status.style.display = 'block';
+            console.error('❌ Failed to start wall selection mode');
         }
 
     } catch (error) {
+        loader.classList.remove('active');
+        backdrop.classList.remove('active');
         status.textContent = `Error: ${error.message}`;
+        status.style.display = 'block';
         console.error(error);
     }
 }
@@ -395,12 +439,40 @@ export function initializeUI(cleanupSceneFunc) {
     // Camera lock/unlock
     let cameraLocked = true;
 
+    // Store the fixed camera target position (prevents click-to-focus)
+    const fixedTarget = new THREE.Vector3(
+        initialCameraState.lookAt.x,
+        initialCameraState.lookAt.y,
+        initialCameraState.lookAt.z
+    );
+
     if (viewer.controls) {
         viewer.controls.enabled = false;
         viewer.controls.enableRotate = false;
         viewer.controls.enableZoom = false;
         viewer.controls.enablePan = false;
+        // Disable keyboard controls (arrow keys)
+        viewer.controls.enableKeys = false;
+        viewer.controls.listenToKeyEvents = false;
+
+        // Set initial target
+        viewer.controls.target.copy(fixedTarget);
+        viewer.controls.update();
     }
+
+    // Prevent click-to-focus by constantly resetting target to fixed position
+    // This runs on every frame and immediately corrects any target changes
+    function enforceFixedTarget() {
+        if (viewer && viewer.controls && !cameraLocked) {
+            // Always enforce fixed target to prevent click-to-focus
+            if (!viewer.controls.target.equals(fixedTarget)) {
+                viewer.controls.target.copy(fixedTarget);
+                viewer.controls.update();
+            }
+        }
+        requestAnimationFrame(enforceFixedTarget);
+    }
+    enforceFixedTarget();
 
     document.getElementById('cameraLockBtn').addEventListener('click', () => {
         const btn = document.getElementById('cameraLockBtn');
@@ -411,10 +483,13 @@ export function initializeUI(cleanupSceneFunc) {
             viewer.controls.enableRotate = !cameraLocked;
             viewer.controls.enableZoom = !cameraLocked;
             viewer.controls.enablePan = !cameraLocked;
+            // Keep keyboard controls disabled even when camera is unlocked
+            viewer.controls.enableKeys = false;
+            viewer.controls.listenToKeyEvents = false;
         }
 
         btn.textContent = cameraLocked ? 'Unlock Camera' : 'Lock Camera';
-        console.log(`Camera ${cameraLocked ? 'locked' : 'unlocked'}`);
+        console.log(`Camera ${cameraLocked ? 'locked' : 'unlocked'} (keyboard controls remain disabled)`);
     });
 
     // Keyboard shortcuts

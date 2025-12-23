@@ -91,6 +91,21 @@
         Press <kbd>H</kbd> to hide/show controls
     </div>
 
+    <!-- Wall Detection Loading Indicator -->
+    <div id="wallDetectionBackdrop"></div>
+    <div id="wallDetectionLoader">
+        <div class="loader-icon">🔍</div>
+        <div class="loader-text">Detecting Walls</div>
+        <div class="loader-subtext">Analyzing scene geometry...</div>
+        <div class="loader-progress"></div>
+    </div>
+
+    <!-- Placement Mode Overlay -->
+    <div id="placementOverlay">
+        Click on a wall to place your decor
+        <span class="cancel-hint">(Press ESC to cancel)</span>
+    </div>
+
     <!-- Wall Decor Arrow Controls -->
     <div id="wallDecorArrowControls">
         <button class="arrow-control-btn arrow-up" data-direction="up" title="Move Up">

@@ -25,6 +25,15 @@ export let wallMaskData = null;
 export let floorOrientation = 'horizontal';
 export let selectedImageFile = null;
 
+// Camera lock state
+export let cameraLocked = true;
+
+// Initial camera state for fixed target
+export const initialCameraState = {
+    position: { x: 0, y: 0, z: 3 },
+    lookAt: { x: 0, y: 0, z: 0 }
+};
+
 // Wall decor variables
 export let detectedWalls = [];
 export let wallGaussianPositions = [];
@@ -89,6 +98,7 @@ export function setFloorMaskData(d) { floorMaskData = d; }
 export function setWallMaskData(d) { wallMaskData = d; }
 export function setFloorOrientation(o) { floorOrientation = o; }
 export function setSelectedImageFile(f) { selectedImageFile = f; }
+export function setCameraLocked(l) { cameraLocked = l; }
 export function setDetectedWalls(w) { detectedWalls = w; }
 export function setWallGaussianPositions(p) { wallGaussianPositions = p; }
 export function setWallGaussianBounds(b) { wallGaussianBounds = b; }
