@@ -18,16 +18,37 @@ import { detectFloor } from './floorDetection.js';
 // ========== HELPER FUNCTIONS ==========
 
 function placeRugOnHorizontalFloor(plane, cameraPos, cameraDir) {
-    // ALWAYS use simple floor centroid placement (works for both generated and local splats with masks)
-    console.log('Placing rug at floor centroid (mask-based detection)');
+    // Project camera view onto the floor plane for better placement
+    console.log('Placing rug on floor plane (projection-based)');
 
-    let position = plane.centroid.clone();
+    // Create plane and project camera looking direction onto it
+    const floorPlane = new THREE.Plane().setFromNormalAndCoplanarPoint(plane.normal, plane.centroid);
+
+    // Cast a ray from camera in the looking direction and find where it hits the floor
+    const rayOrigin = cameraPos.clone();
+    const rayDir = cameraDir.clone().normalize();
+    const rayTarget = new THREE.Vector3();
+    const ray = new THREE.Ray(rayOrigin, rayDir);
+
+    let position;
+    if (ray.intersectPlane(floorPlane, rayTarget)) {
+        // Use the intersection point
+        position = rayTarget.clone();
+        console.log('Rug placed at camera ray intersection with floor');
+    } else {
+        // Fallback: project camera position down onto floor
+        position = floorPlane.projectPoint(cameraPos, new THREE.Vector3());
+        console.log('Rug placed at camera projection onto floor');
+    }
 
     // Add small offset along floor normal to place rug slightly above the floor plane
     const rugHeightOffset = 0.001; // 0.1cm above the detected floor plane
     position.add(plane.normal.clone().multiplyScalar(rugHeightOffset));
 
-    console.log('Rug position at floor centroid:', position);
+    console.log('Rug position:', position);
+
+    // Store this as the reference position for consistent updates
+    plane.referencePosition = position.clone();
 
     position.x += rugParams.offsetX;
     position.y += rugParams.offsetY;
@@ -48,10 +69,12 @@ function placeRugOnHorizontalFloor(plane, cameraPos, cameraDir) {
 
 function placeRugOnWall(plane, cameraPos, cameraDir) {
     const wallPlane = new THREE.Plane().setFromNormalAndCoplanarPoint(plane.normal, plane.centroid);
-    const distToWall = wallPlane.distanceToPoint(cameraPos);
 
-    let position = plane.centroid.clone();
-    position.y = cameraPos.y;
+    // Project camera position onto wall plane
+    let position = wallPlane.projectPoint(cameraPos, new THREE.Vector3());
+
+    // Store as reference position
+    plane.referencePosition = position.clone();
 
     const autoZOffset = -0.04;
     position.z += autoZOffset;
@@ -77,7 +100,8 @@ function updateRugPosition() {
     if (!rug || !detectedPlane) return;
 
     const plane = detectedPlane;
-    const position = plane.centroid.clone();
+    // Use reference position from initial placement (not centroid)
+    const position = (plane.referencePosition || plane.centroid).clone();
 
     position.x += rugParams.offsetX;
     position.y += rugParams.offsetY;
@@ -458,9 +482,9 @@ export async function placeRugAuto(rugTextureUrl) {
             // Place rug at exact same world position
             rug.position.copy(savedPosition);
 
-            // Calculate offsets relative to floor centroid
+            // Calculate offsets relative to floor reference position
             const plane = detectedPlane;
-            const basePosition = plane.centroid.clone();
+            const basePosition = (plane.referencePosition || plane.centroid).clone();
 
             rugParams.offsetX = savedPosition.x - basePosition.x;
             rugParams.offsetY = savedPosition.y - basePosition.y;
@@ -635,7 +659,7 @@ export function onRugMouseMove(event) {
             newCenter.y = rug.position.y;
 
             // Update offset parameters to reflect the new position
-            const initialPos = detectedPlane.centroid.clone();
+            const initialPos = (detectedPlane.referencePosition || detectedPlane.centroid).clone();
 
             rugParams.offsetX = newCenter.x - initialPos.x;
             // Don't update offsetY - keep rug at same height when resizing
@@ -692,7 +716,7 @@ export function onRugMouseMove(event) {
             rug.position.copy(newPos);
 
             // Update the offset params to match
-            const initialPos = detectedPlane.centroid.clone();
+            const initialPos = (detectedPlane.referencePosition || detectedPlane.centroid).clone();
 
             rugParams.offsetX = newPos.x - initialPos.x;
             rugParams.offsetY = newPos.y - initialPos.y;

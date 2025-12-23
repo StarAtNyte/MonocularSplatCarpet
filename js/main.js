@@ -4,11 +4,12 @@ import {
     viewer, currentSplatPath, splatLoaded,
     setViewer, setSplatLoaded, setFloorMaskData, setWallMaskData,
     setGeneratedSplatData, setCustomRugTexture, setDetectedPlane,
-    setDetectedWallPlane, setFloorOrientation, rugParams, wallDecorParams
+    setDetectedWallPlane, setFloorOrientation, rugParams, wallDecorParams,
+    setWallGaussianPositions, setWallGaussianBounds, setWallClusters, setActiveWall
 } from './utils.js';
 import { initializeUI } from './ui.js';
 import { onRugMouseDown, onRugMouseMove, onRugMouseUp, removeCurrentRug } from './rug.js';
-import { removeCurrentWallDecor } from './wallDecor.js';
+import { removeCurrentWallDecor, onWallDecorMouseDown, onWallDecorMouseMove, onWallDecorMouseUp } from './wallDecor.js';
 import { loadSplatFromFolder } from './api.js';
 
 // Cleanup scene function
@@ -27,6 +28,12 @@ export function cleanupScene(clearMaskData = true) {
     if (clearMaskData) {
         setFloorMaskData(null);
         setWallMaskData(null);
+        // Clear wall detection state
+        setWallGaussianPositions([]);
+        setWallGaussianBounds(null);
+        setWallClusters([]);
+        setActiveWall(null);
+        console.log('Cleared wall mask data and clusters');
     }
 
     // Reset params
@@ -40,7 +47,8 @@ export function cleanupScene(clearMaskData = true) {
     wallDecorParams.visible = true;
     wallDecorParams.offsetX = 0;
     wallDecorParams.offsetY = 0;
-    wallDecorParams.offsetZ = 0.02;
+    wallDecorParams.offsetZ = 0.05; // Match default
+    wallDecorParams.rotation = 0;
     wallDecorParams.scale = 0.5;
 }
 
@@ -72,9 +80,35 @@ loadSplatFromFolder(currentSplatPath, cleanupScene)
     .then(() => {
         // Setup mouse event listeners
         const canvas = viewerInstance.renderer.domElement;
-        canvas.addEventListener('mousedown', onRugMouseDown, false);
-        canvas.addEventListener('mousemove', onRugMouseMove, false);
-        canvas.addEventListener('mouseup', onRugMouseUp, false);
+
+        // Combined mouse down handler
+        canvas.addEventListener('mousedown', (event) => {
+            // Try wall decor first (it will return false if not applicable)
+            const wallDecorHandled = onWallDecorMouseDown(event);
+            if (!wallDecorHandled) {
+                // If wall decor didn't handle it, try rug
+                onRugMouseDown(event);
+            }
+        }, false);
+
+        // Combined mouse move handler
+        canvas.addEventListener('mousemove', (event) => {
+            // Try wall decor first
+            const wallDecorHandled = onWallDecorMouseMove(event);
+            if (!wallDecorHandled) {
+                // If wall decor didn't handle it, try rug
+                onRugMouseMove(event);
+            }
+        }, false);
+
+        // Combined mouse up handler
+        canvas.addEventListener('mouseup', (event) => {
+            // Try both (they check their own state)
+            const wallDecorHandled = onWallDecorMouseUp(event);
+            if (!wallDecorHandled) {
+                onRugMouseUp(event);
+            }
+        }, false);
 
         console.log('Application initialized');
     })

@@ -11,7 +11,7 @@ import { detectWall, collectWallGaussians, clusterWallsByOrientation } from './w
 import { placeRugAuto } from './rug.js';
 import {
     createWallDecor, placeWallDecorOnWall, setupWallDecorGUI, removeCurrentWallDecor,
-    startWallSelectionMode, handleWallClick, handleWallHover, handleWallDecorHover, setupArrowControls
+    startWallSelectionMode, handleWallClick, handleWallHover,
 } from './wallDecor.js';
 import * as THREE from 'three';
 
@@ -171,7 +171,6 @@ export function initializeUI(cleanupSceneFunc) {
 
     canvas.addEventListener('mousemove', (event) => {
         handleWallHover(event);
-        handleWallDecorHover(event);
     });
 
     // Splat select dropdown
@@ -390,8 +389,6 @@ export function initializeUI(cleanupSceneFunc) {
         }
     });
 
-    // Setup arrow controls for wall decor positioning
-    setupArrowControls();
 
     console.log('UI fully initialized');
 }

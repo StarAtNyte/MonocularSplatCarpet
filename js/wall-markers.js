@@ -242,7 +242,7 @@ export function showWallMarkers() {
         return [];
     }
 
-    console.log(`📍 Creating markers for ${wallClusters.length} walls`);
+    console.log(`ðŸ“ Creating markers for ${wallClusters.length} walls`);
 
     // Different colors for each wall
     const colors = [0x00ff88, 0xff6b6b, 0x4dabf7, 0xffd43b, 0xbe4bdb, 0x06ffa5];
@@ -262,7 +262,7 @@ export function showWallMarkers() {
         animateMarkers();
     }
 
-    console.log(`✅ Created ${wallMarkers.length} marker objects for ${wallClusters.length} walls`);
+    console.log(`âœ… Created ${wallMarkers.length} marker objects for ${wallClusters.length} walls`);
     return wallMarkers;
 }
 
@@ -307,7 +307,7 @@ export function raycastWallMarkers(event) {
     const intersects = raycaster.intersectObjects(clickableObjects, false);
 
     if (intersects.length > 0) {
-        console.log(`✅ Clicked on Wall ${intersects[0].object.userData.wall.id}`);
+        console.log(`âœ… Clicked on Wall ${intersects[0].object.userData.wall.id}`);
         return intersects[0].object.userData.wall;
     }
 

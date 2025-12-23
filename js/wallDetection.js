@@ -38,7 +38,7 @@ export function collectWallGaussians() {
         }
     }
 
-    console.log(`✅ Collected ${positions.length} wall gaussians`);
+    console.log(`âœ… Collected ${positions.length} wall gaussians`);
 
     if (positions.length < 10) {
         console.warn('Not enough wall gaussians');
@@ -124,7 +124,7 @@ export function findCameraFacingWall(wallClusters, cameraPos, cameraDirection) {
     }
 
     if (bestWall) {
-        console.log(`📍 Camera facing Wall ${bestWall.id}: alignment score ${bestScore.toFixed(2)}`);
+        console.log(`ðŸ“ Camera facing Wall ${bestWall.id}: alignment score ${bestScore.toFixed(2)}`);
     }
 
     return bestWall;
@@ -154,6 +154,9 @@ export function getWallNormalAtPosition(position, cameraPos, numSamples = 100) {
         return null;
     }
 
+    // Force normal to be horizontal (walls are vertical)
+    plane.normal = makeNormalHorizontal(plane.normal);
+
     const camToWall = new THREE.Vector3().subVectors(plane.centroid, cameraPos);
     if (plane.normal.dot(camToWall) > 0) {
         plane.normal.negate();
@@ -163,12 +166,27 @@ export function getWallNormalAtPosition(position, cameraPos, numSamples = 100) {
 }
 
 /**
+ * Normalize a wall normal to be horizontal (perpendicular to up direction)
+ */
+function makeNormalHorizontal(normal) {
+    // Project normal onto horizontal plane (zero out Y component)
+    const horizontalNormal = new THREE.Vector3(normal.x, 0, normal.z);
+
+    // Handle edge case where normal is purely vertical
+    if (horizontalNormal.lengthSq() < 0.001) {
+        return new THREE.Vector3(1, 0, 0); // Default to X axis
+    }
+
+    return horizontalNormal.normalize();
+}
+
+/**
  * Cluster wall gaussians by orientation
  */
 export function clusterWallsByOrientation(positions, cameraPos) {
     if (positions.length < 50) return [];
 
-    console.log(`🔷 Clustering ${positions.length} wall gaussians by orientation...`);
+    console.log(`ðŸ”· Clustering ${positions.length} wall gaussians by orientation...`);
 
     // Use fewer samples for performance
     const targetSamples = Math.min(100, Math.max(20, Math.floor(positions.length / 2000)));
@@ -180,26 +198,33 @@ export function clusterWallsByOrientation(positions, cameraPos) {
         if (samples.length >= targetSamples) break;
     }
 
-    console.log(`📊 Using ${samples.length} sample points for clustering`);
+    console.log(`ðŸ“Š Using ${samples.length} sample points for clustering`);
 
-    // Fit local planes
+    // Fit local planes and force them to be vertical
     const localPlanes = [];
     for (const sample of samples) {
-        const nearby = positions.filter(p => p.distanceTo(sample) < 1.0);
-        if (nearby.length < 20) continue;
+        const nearby = positions.filter(p => p.distanceTo(sample) < 2.0); // Increased radius
+        if (nearby.length < 30) continue; // More points for stable fit
 
         const plane = fitPlaneToWallGaussians(nearby, cameraPos);
         if (plane) {
+            // Force the normal to be horizontal (walls should be vertical)
+            plane.normal = makeNormalHorizontal(plane.normal);
+            // Ensure normal points toward camera
+            const centroidToCamera = new THREE.Vector3().subVectors(cameraPos, plane.centroid);
+            if (plane.normal.dot(centroidToCamera) < 0) {
+                plane.normal.negate();
+            }
             localPlanes.push(plane);
         }
     }
 
     if (localPlanes.length === 0) return [];
 
-    console.log(`📐 Found ${localPlanes.length} local plane samples`);
+    console.log(`ðŸ“ Found ${localPlanes.length} local plane samples`);
 
-    // Cluster by normal similarity
-    const normalThreshold = 0.3;
+    // Cluster by normal similarity (horizontal normals, so similar directions merge)
+    const normalThreshold = 0.7; // cos(45deg) - walls within ~45 degrees merge
     const clusteredPlanes = [];
 
     for (const plane of localPlanes) {
@@ -227,8 +252,9 @@ export function clusterWallsByOrientation(positions, cameraPos) {
         new THREE.Plane().setFromNormalAndCoplanarPoint(plane.normal, plane.centroid)
     );
 
-    console.log(`🔍 Assigning ${positions.length} gaussians to ${clusteredPlanes.length} clusters...`);
+    console.log(`ðŸ” Assigning ${positions.length} gaussians to ${clusteredPlanes.length} clusters...`);
 
+    let assignedCount = 0;
     for (const pos of positions) {
         let bestPlane = null;
         let bestDist = Infinity;
@@ -242,14 +268,17 @@ export function clusterWallsByOrientation(positions, cameraPos) {
             }
         }
 
-        if (bestPlane && bestDist < 1.0) {
+        if (bestPlane && bestDist < 0.8) { // 80cm max - walls can have depth
             bestPlane.gaussians.push(pos);
+            assignedCount++;
         }
     }
 
+    console.log(`Assigned ${assignedCount}/${positions.length} gaussians (${((assignedCount/positions.length)*100).toFixed(1)}%)`);
+
     // Refit planes
     const finalPlanes = [];
-    console.log(`🧱 Identified ${clusteredPlanes.length} distinct wall orientations`);
+    console.log(`ðŸ§± Identified ${clusteredPlanes.length} distinct wall orientations`);
 
     for (let i = 0; i < clusteredPlanes.length; i++) {
         const cluster = clusteredPlanes[i];
@@ -260,6 +289,14 @@ export function clusterWallsByOrientation(positions, cameraPos) {
 
         const plane = fitPlaneToWallGaussians(cluster.gaussians, cameraPos);
         if (plane) {
+            // Force final normal to be horizontal
+            plane.normal = makeNormalHorizontal(plane.normal);
+            // Ensure normal points toward camera
+            const centroidToCamera = new THREE.Vector3().subVectors(cameraPos, plane.centroid);
+            if (plane.normal.dot(centroidToCamera) < 0) {
+                plane.normal.negate();
+            }
+
             finalPlanes.push({
                 id: i,
                 normal: plane.normal,
@@ -267,11 +304,11 @@ export function clusterWallsByOrientation(positions, cameraPos) {
                 gaussians: cluster.gaussians,
                 plane: plane
             });
-            console.log(`  ✓ Wall ${i}: ${cluster.gaussians.length.toLocaleString()} gaussians, normal: [${plane.normal.x.toFixed(2)}, ${plane.normal.y.toFixed(2)}, ${plane.normal.z.toFixed(2)}]`);
+            console.log(`  âœ" Wall ${i}: ${cluster.gaussians.length.toLocaleString()} gaussians, normal: [${plane.normal.x.toFixed(2)}, ${plane.normal.y.toFixed(2)}, ${plane.normal.z.toFixed(2)}]`);
         }
     }
 
-    console.log(`✅ Final result: ${finalPlanes.length} wall clusters created`);
+    console.log(`âœ… Final result: ${finalPlanes.length} wall clusters created`);
     return finalPlanes;
 }
 
@@ -409,7 +446,7 @@ export function clusterWallsFromGaussians(wallMaskData, splatMesh) {
         const absY = Math.abs(plane.normal.y);
 
         if (absY > 0.5) {
-            console.log(`❌ Rejected cluster ${i}: ${positions.length} gaussians - horizontal surface (|normal.y|=${absY.toFixed(2)} > 0.5)`);
+            console.log(`âŒ Rejected cluster ${i}: ${positions.length} gaussians - horizontal surface (|normal.y|=${absY.toFixed(2)} > 0.5)`);
             continue;
         }
 
@@ -432,7 +469,7 @@ export function clusterWallsFromGaussians(wallMaskData, splatMesh) {
             gaussianCount: positions.length
         });
 
-        console.log(`✅ Wall ${wallIndex}: ${positions.length} gaussians, normal: [${plane.normal.x.toFixed(2)}, ${plane.normal.y.toFixed(2)}, ${plane.normal.z.toFixed(2)}] (|Y|=${absY.toFixed(2)})`);
+        console.log(`âœ… Wall ${wallIndex}: ${positions.length} gaussians, normal: [${plane.normal.x.toFixed(2)}, ${plane.normal.y.toFixed(2)}, ${plane.normal.z.toFixed(2)}] (|Y|=${absY.toFixed(2)})`);
         wallIndex++;
     }
 
@@ -469,7 +506,7 @@ export async function detectWall() {
             return false;
         }
 
-        console.log(`✅ Loaded ${wallGaussianPositions.length} wall gaussians`);
+        console.log(`âœ… Loaded ${wallGaussianPositions.length} wall gaussians`);
 
         status.innerHTML = `<strong>Wall Detected!</strong><br>
             ${wallGaussianPositions.length.toLocaleString()} gaussians detected`;
