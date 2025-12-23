@@ -575,7 +575,8 @@ export function onRugMouseDown(event) {
         // Store initial distance between corners
         setInitialDistance(oppCornerWorld.distanceTo(dragCornerWorld));
 
-        viewer.controls.enabled = false;
+        if (viewer.controls) viewer.controls.enabled = false;
+        if (window.pauseCameraReset) window.pauseCameraReset(true);
         viewer.renderer.domElement.style.cursor = 'nwse-resize';
         event.preventDefault();
         return;
@@ -587,7 +588,8 @@ export function onRugMouseDown(event) {
         setIsDragging(false);
         setIsResizing(false);
         setPreviousMouse({ x: event.clientX, y: event.clientY });
-        viewer.controls.enabled = false;
+        if (viewer.controls) viewer.controls.enabled = false;
+        if (window.pauseCameraReset) window.pauseCameraReset(true);
         viewer.renderer.domElement.style.cursor = 'grabbing';
         event.preventDefault();
         return;
@@ -624,7 +626,8 @@ export function onRugMouseDown(event) {
             offset.copy(intersect.point).sub(rug.position);
         }
 
-        viewer.controls.enabled = false;
+        if (viewer.controls) viewer.controls.enabled = false;
+        if (window.pauseCameraReset) window.pauseCameraReset(true);
         viewer.renderer.domElement.style.cursor = 'grabbing';
         event.preventDefault();
     }
@@ -783,7 +786,8 @@ export function onRugMouseUp(event) {
         setOppositeCornerWorld(null);
         setDraggedCornerWorld(null);
         setInitialRugCenter(null);
-        viewer.controls.enabled = true; // Re-enable controls after interaction
+        if (viewer.controls) viewer.controls.enabled = true; // Re-enable controls after interaction
+        if (window.pauseCameraReset) window.pauseCameraReset(false);
         viewer.renderer.domElement.style.cursor = 'default';
         event.preventDefault();
     }

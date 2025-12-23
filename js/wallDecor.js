@@ -779,7 +779,8 @@ export function onWallDecorMouseDown(event) {
         setInitialScale(wallDecorParams.scale);
         setInitialRugCenter(wallDecor.position.clone());
 
-        viewer.controls.enabled = false;
+        if (viewer.controls) viewer.controls.enabled = false;
+        if (window.pauseCameraReset) window.pauseCameraReset(true);
         viewer.renderer.domElement.style.cursor = 'nwse-resize';
         event.preventDefault();
         return true;
@@ -791,7 +792,8 @@ export function onWallDecorMouseDown(event) {
         setIsDragging(false);
         setIsResizing(false);
         setPreviousMouse({ x: event.clientX, y: event.clientY });
-        viewer.controls.enabled = false;
+        if (viewer.controls) viewer.controls.enabled = false;
+        if (window.pauseCameraReset) window.pauseCameraReset(true);
         viewer.renderer.domElement.style.cursor = 'grabbing';
         event.preventDefault();
         return true;
@@ -823,7 +825,8 @@ export function onWallDecorMouseDown(event) {
             offset.copy(intersect.point).sub(wallDecor.position);
         }
 
-        viewer.controls.enabled = false;
+        if (viewer.controls) viewer.controls.enabled = false;
+        if (window.pauseCameraReset) window.pauseCameraReset(true);
         viewer.renderer.domElement.style.cursor = 'grabbing';
         event.preventDefault();
         return true;
@@ -968,7 +971,8 @@ export function onWallDecorMouseUp(event) {
         setOppositeCornerWorld(null);
         setDraggedCornerWorld(null);
         setInitialRugCenter(null);
-        viewer.controls.enabled = true;
+        if (viewer.controls) viewer.controls.enabled = true;
+        if (window.pauseCameraReset) window.pauseCameraReset(false);
         viewer.renderer.domElement.style.cursor = 'default';
         event.preventDefault();
         return true;

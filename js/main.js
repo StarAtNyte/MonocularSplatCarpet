@@ -58,14 +58,55 @@ export function cleanupScene(clearMaskData = true) {
 // Initialize viewer
 const viewerInstance = new GaussianSplats3D.Viewer({
     cameraUp: [0, -1, 0],
-    initialCameraPosition: [0, 0, 3],
-    initialCameraLookAt: [0, 0, 0],
+    initialCameraPosition: [-0.24324, -0.08784, 0.72614],
+    initialCameraLookAt: [-0.24324, -0.08784, 4.05811],
     sphericalHarmonicsDegree: 2,
     sharedMemoryForWorkers: false,
-    selfDrivenMode: true
+    selfDrivenMode: true,
+    useBuiltInControls: false,
+
 });
 
 setViewer(viewerInstance);
+
+// Camera position lock system (works without built-in controls)
+// These match the viewer's initial camera settings
+const initialCameraPos = new THREE.Vector3(-0.24324, -0.08784, 0.72614);
+const initialCameraLookAt = new THREE.Vector3(-0.24324, -0.08784, 4.05811);
+let cameraResetPaused = false; // Pause during rug/wall manipulation
+
+// Export function to pause/resume camera reset
+window.pauseCameraReset = (pause) => {
+    cameraResetPaused = pause;
+};
+
+// Monitor and reset camera position on every frame
+function enforceCameraLock() {
+    if (!cameraResetPaused) {
+        const currentPos = viewerInstance.camera.position;
+        const distance = currentPos.distanceTo(initialCameraPos);
+
+        // If camera has moved significantly, smoothly return it to initial position
+        if (distance > 0.01) {
+            // Smooth interpolation back to initial position
+            currentPos.lerp(initialCameraPos, 0.2);
+
+            // Also reset camera lookAt
+            const tempTarget = new THREE.Vector3();
+            viewerInstance.camera.getWorldDirection(tempTarget);
+            tempTarget.add(currentPos);
+
+            const initialDir = initialCameraLookAt.clone().sub(initialCameraPos).normalize();
+            const currentDir = tempTarget.clone().sub(currentPos).normalize();
+            currentDir.lerp(initialDir, 0.2);
+
+            const newLookAt = currentPos.clone().add(currentDir);
+            viewerInstance.camera.lookAt(newLookAt);
+        }
+    }
+    requestAnimationFrame(enforceCameraLock);
+}
+enforceCameraLock();
 
 // Camera controls will be managed by UI (locked by default)
 // Controls are disabled initially and can be toggled via debug panel

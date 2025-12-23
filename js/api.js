@@ -175,8 +175,10 @@ export async function loadGeneratedSplat(cleanupSceneFunc) {
         const lookAtPoint = new THREE.Vector3(-0.24324, -0.08784, 4.05811);
         viewer.camera.position.copy(cameraPosition);
         viewer.camera.lookAt(lookAtPoint);
-        viewer.controls.target.copy(lookAtPoint);
-        viewer.controls.update();
+        if (viewer.controls) {
+            viewer.controls.target.copy(lookAtPoint);
+            viewer.controls.update();
+        }
 
         // Enable floor detection button with appropriate text
         const toggleFloorBtn = document.getElementById('toggleFloorBtn');
@@ -334,8 +336,10 @@ export async function loadSplatFromFolder(folderPath, cleanupSceneFunc) {
         const lookAtPoint = new THREE.Vector3(-0.24324, -0.08784, 4.05811);
         viewer.camera.position.copy(cameraPosition);
         viewer.camera.lookAt(lookAtPoint);
-        viewer.controls.target.copy(lookAtPoint);
-        viewer.controls.update();
+        if (viewer.controls) {
+            viewer.controls.target.copy(lookAtPoint);
+            viewer.controls.update();
+        }
 
         // Enable floor detection button
         const toggleFloorBtn = document.getElementById('toggleFloorBtn');
