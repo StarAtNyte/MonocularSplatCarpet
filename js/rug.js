@@ -32,9 +32,19 @@ function placeRugOnHorizontalFloor(plane, cameraPos, cameraDir) {
 
     let position;
     if (ray.intersectPlane(floorPlane, rayTarget)) {
-        // Use the intersection point
-        position = rayTarget.clone();
-        console.log('Rug placed at camera ray intersection with floor');
+        // Use the intersection point, but limit the distance to keep rug close
+        const distanceToIntersection = cameraPos.distanceTo(rayTarget);
+        const maxDistance = 2.5; // Maximum 2.5 meters from camera
+
+        if (distanceToIntersection > maxDistance) {
+            // Place at fixed distance along camera direction, then project to floor
+            const targetPoint = cameraPos.clone().add(rayDir.clone().multiplyScalar(maxDistance));
+            position = floorPlane.projectPoint(targetPoint, new THREE.Vector3());
+            console.log(`Rug placed at clamped distance (${maxDistance}m) from camera`);
+        } else {
+            position = rayTarget.clone();
+            console.log('Rug placed at camera ray intersection with floor');
+        }
     } else {
         // Fallback: project camera position down onto floor
         position = floorPlane.projectPoint(cameraPos, new THREE.Vector3());
@@ -42,7 +52,7 @@ function placeRugOnHorizontalFloor(plane, cameraPos, cameraDir) {
     }
 
     // Add small offset along floor normal to place rug slightly above the floor plane
-    const rugHeightOffset = 0.001; // 0.1cm above the detected floor plane
+    const rugHeightOffset = 0.0001; // 0.01cm above the detected floor plane
     position.add(plane.normal.clone().multiplyScalar(rugHeightOffset));
 
     console.log('Rug position:', position);
@@ -395,6 +405,10 @@ export function setupRugGUI() {
     transformFolder.add(rugParams, 'rotation', 0, 360, 1).name('Rotation (°)').onChange(() => updateRug(true));
     transformFolder.add(rugParams, 'scale', 0.1, 10, 0.01).name('Scale').onChange(() => updateRug(true));
     transformFolder.open();
+
+    // Add remove button
+    const removeButton = { remove: () => removeCurrentRug() };
+    newGui.add(removeButton, 'remove').name('🗑️ Remove Rug');
 }
 
 export function removeCurrentRug() {
@@ -514,8 +528,8 @@ export async function placeRugAuto(rugTextureUrl) {
             placeRugOnFloor();
 
             // Save current camera position
-            lastCameraPosition = currentCameraPos;
-            console.log('Rug placed at new position based on camera. Camera position saved:', lastCameraPosition);
+            setLastCameraPosition(currentCameraPos);
+            console.log('Rug placed at new position based on camera. Camera position saved:', currentCameraPos);
         }
 
         setupRugGUI();

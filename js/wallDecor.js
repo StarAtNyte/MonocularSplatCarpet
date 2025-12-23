@@ -202,6 +202,14 @@ export function createWallDecor(textureUrl) {
                 wallDecor.material.dispose();
             }
 
+            // Improve texture quality
+            texture.anisotropy = viewer.renderer.capabilities.getMaxAnisotropy();
+            texture.minFilter = THREE.LinearMipmapLinearFilter;
+            texture.magFilter = THREE.LinearFilter;
+            texture.generateMipmaps = true;
+            texture.colorSpace = THREE.SRGBColorSpace;
+            texture.needsUpdate = true;
+
             const decorWidth = 1.5;
             const aspectRatio = texture.image.height / texture.image.width;
             const decorHeight = decorWidth * aspectRatio;
@@ -246,6 +254,8 @@ export function placeWallDecorOnWall(selectedWall = null) {
         return;
     }
 
+    // Initial camera position from viewer setup
+    const initialCameraPos = new THREE.Vector3(0, 0, 3);
     const cameraPos = viewer.camera.position.clone();
     const cameraDir = new THREE.Vector3();
     viewer.camera.getWorldDirection(cameraDir);
@@ -314,6 +324,24 @@ export function placeWallDecorOnWall(selectedWall = null) {
     // Store this as the surface center for consistent positioning
     activeWall.surfaceCenter = wallCenter.clone();
 
+    // Calculate distance from initial camera position to wall center
+    const distanceFromInitialCamera = initialCameraPos.distanceTo(wallCenter);
+
+    // Apply distance-based offset
+    let autoOffsetZ = 0.06; // Default offset
+    if (distanceFromInitialCamera > 10) {
+        autoOffsetZ = 0.3;
+    } else if (distanceFromInitialCamera > 8) {
+        autoOffsetZ = 0.1;
+    } else if (distanceFromInitialCamera > 5) {
+        autoOffsetZ = 0.08;
+    }
+
+    console.log(`Distance from initial camera: ${distanceFromInitialCamera.toFixed(2)}m, applying offset: ${autoOffsetZ}m`);
+
+    // Update offsetZ parameter with distance-based value
+    wallDecorParams.offsetZ = autoOffsetZ;
+
     let position = wallCenter.clone();
 
     position.addScaledVector(right, wallDecorParams.offsetX);
@@ -378,7 +406,7 @@ export function handleWallClick(event) {
 
         wallDecorParams.offsetX = 0;
         wallDecorParams.offsetY = 0;
-        wallDecorParams.offsetZ = 0.03;
+        // offsetZ will be set automatically based on distance in placeWallDecorOnWall
         wallDecorParams.rotation = 0;
 
         placeWallDecorOnWall(selectedWall);
@@ -720,6 +748,10 @@ export function setupWallDecorGUI() {
     transformFolder.add(wallDecorParams, 'scale', 0.1, 10, 0.01).name('Scale').onChange(() => updateWallDecor(true));
     transformFolder.add(wallDecorParams, 'rotation', 0, 360, 1).name('Rotation').onChange(() => updateWallDecor(true));
     transformFolder.open();
+
+    // Add remove button
+    const removeButton = { remove: () => removeCurrentWallDecor() };
+    newWallDecorGui.add(removeButton, 'remove').name('🗑️ Remove Decor');
 
     const hint = document.createElement('div');
     hint.style.cssText = 'padding: 8px; background: #1a2a1a; color: #90ee90; border-radius: 4px; font-size: 11px; margin-top: 8px; border: 1px solid #2a4a2a;';

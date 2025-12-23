@@ -3,12 +3,12 @@ import {
     splatLoaded, floorPlaneMesh, floorPlaneVisible,
     setFloorPlaneVisible, setCurrentSplatPath, setSplatLoaded,
     wallGaussianPositions, wallClusters, wallClusterHelpers,
-    setWallClusterHelpers, setWallClusters
+    setWallClusterHelpers, setWallClusters, wallDecor, rug
 } from './utils.js';
 import { generateSplatFromImage, downloadGeneratedPLY, loadSplatFromFolder } from './api.js';
 import { detectFloor, createFloorPlaneVisualization } from './floorDetection.js';
 import { detectWall, collectWallGaussians, clusterWallsByOrientation } from './wallDetection.js';
-import { placeRugAuto } from './rug.js';
+import { placeRugAuto, removeCurrentRug } from './rug.js';
 import {
     createWallDecor, placeWallDecorOnWall, setupWallDecorGUI, removeCurrentWallDecor,
     startWallSelectionMode, handleWallClick, handleWallHover,
@@ -82,6 +82,8 @@ export async function selectRug(rugPath) {
     try {
         await placeRugAuto(rugPath);
         document.getElementById('rugSidebar').classList.remove('open');
+        // Show controls after sidebar closes
+        showAllControls();
     } catch (error) {
         status.textContent = `Error: ${error.message}`;
         console.error(error);
@@ -135,7 +137,7 @@ export async function selectWallDecor(decorPath) {
         // Reset offsets for new placement
         wallDecorParams.offsetX = 0;
         wallDecorParams.offsetY = 0;
-        wallDecorParams.offsetZ = 0.02;
+        wallDecorParams.offsetZ = 0.08;
 
         // Enter wall selection mode
         const selectionStarted = startWallSelectionMode();
@@ -143,6 +145,8 @@ export async function selectWallDecor(decorPath) {
         if (selectionStarted) {
             setupWallDecorGUI();
             document.getElementById('wallDecorSidebar').classList.remove('open');
+            // Show controls after sidebar closes
+            showAllControls();
         } else {
             status.textContent = 'Error: Could not start wall selection';
         }
@@ -150,6 +154,35 @@ export async function selectWallDecor(decorPath) {
     } catch (error) {
         status.textContent = `Error: ${error.message}`;
         console.error(error);
+    }
+}
+
+// Helper functions to manage control visibility when sidebars open/close
+function hideAllControls() {
+    // Hide lil-gui controls
+    const guiElements = document.querySelectorAll('.lil-gui.root');
+    guiElements.forEach(gui => {
+        gui.style.display = 'none';
+    });
+
+    // Hide wall decor arrow controls
+    const arrowControls = document.getElementById('wallDecorArrowControls');
+    if (arrowControls) {
+        arrowControls.style.display = 'none';
+    }
+}
+
+function showAllControls() {
+    // Show lil-gui controls
+    const guiElements = document.querySelectorAll('.lil-gui.root');
+    guiElements.forEach(gui => {
+        gui.style.display = '';
+    });
+
+    // Show wall decor arrow controls (if they were visible before)
+    const arrowControls = document.getElementById('wallDecorArrowControls');
+    if (arrowControls && arrowControls.classList.contains('visible')) {
+        arrowControls.style.display = '';
     }
 }
 
@@ -307,19 +340,33 @@ export function initializeUI(cleanupSceneFunc) {
 
     // Open/close sidebars
     document.getElementById('openRugBtn').addEventListener('click', () => {
+        // Close wall decor sidebar if open
+        document.getElementById('wallDecorSidebar').classList.remove('open');
+        // Hide controls to prevent overlap
+        hideAllControls();
+        // Open rug sidebar
         document.getElementById('rugSidebar').classList.add('open');
     });
 
     document.getElementById('closeRugBtn').addEventListener('click', () => {
         document.getElementById('rugSidebar').classList.remove('open');
+        // Show controls again
+        showAllControls();
     });
 
     document.getElementById('openWallDecorBtn').addEventListener('click', () => {
+        // Close rug sidebar if open
+        document.getElementById('rugSidebar').classList.remove('open');
+        // Hide controls to prevent overlap
+        hideAllControls();
+        // Open wall decor sidebar
         document.getElementById('wallDecorSidebar').classList.add('open');
     });
 
     document.getElementById('closeWallDecorBtn').addEventListener('click', () => {
         document.getElementById('wallDecorSidebar').classList.remove('open');
+        // Show controls again
+        showAllControls();
     });
 
     // Custom uploads
@@ -386,6 +433,27 @@ export function initializeUI(cleanupSceneFunc) {
             const isVisible = debugPanel.style.display !== 'none';
             debugPanel.style.display = isVisible ? 'none' : 'block';
             console.log(`Debug panel ${isVisible ? 'hidden' : 'shown'}`);
+        }
+
+        // Delete or Backspace to remove placed items
+        if (event.key === 'Delete' || event.key === 'Backspace') {
+            // Don't trigger if user is typing in an input field
+            if (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA') {
+                return;
+            }
+
+            event.preventDefault();
+
+            // Try to remove wall decor first (if it exists), otherwise remove rug
+            if (wallDecor) {
+                removeCurrentWallDecor();
+                console.log('Wall decor removed via keyboard shortcut');
+            } else if (rug) {
+                removeCurrentRug();
+                console.log('Rug removed via keyboard shortcut');
+            } else {
+                console.log('No items to remove');
+            }
         }
     });
 

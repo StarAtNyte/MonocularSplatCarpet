@@ -24,16 +24,19 @@ export function cleanupScene(clearMaskData = true) {
     setDetectedWallPlane(null);
     setCustomRugTexture(null);
 
-    // Only clear mask data when switching to a new scene
+    // Always clear computed wall state (these are derived from mask data)
+    setWallGaussianPositions([]);
+    setWallGaussianBounds(null);
+    setWallClusters([]);
+    setActiveWall(null);
+
+    // Only clear raw mask data when switching to a new scene
     if (clearMaskData) {
         setFloorMaskData(null);
         setWallMaskData(null);
-        // Clear wall detection state
-        setWallGaussianPositions([]);
-        setWallGaussianBounds(null);
-        setWallClusters([]);
-        setActiveWall(null);
-        console.log('Cleared wall mask data and clusters');
+        console.log('Cleared wall mask data and computed wall state');
+    } else {
+        console.log('Cleared computed wall state (keeping mask data)');
     }
 
     // Reset params
