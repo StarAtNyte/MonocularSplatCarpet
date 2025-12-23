@@ -495,3 +495,91 @@ body {
     font-size: 14px;
     filter: drop-shadow(0 0 6px rgba(74, 144, 226, 0.4));
 }
+
+/* Wall Decor Arrow Controls */
+#wallDecorArrowControls {
+    position: fixed;
+    pointer-events: none;
+    z-index: 5000;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+#wallDecorArrowControls.visible {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.arrow-control-btn {
+    position: absolute;
+    width: 36px;
+    height: 36px;
+    background: rgba(31, 31, 31, 0.95);
+    border: 2px solid rgba(74, 144, 226, 0.6);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    backdrop-filter: blur(10px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+}
+
+.arrow-control-btn:hover {
+    background: rgba(74, 144, 226, 0.9);
+    border-color: rgba(74, 144, 226, 1);
+    transform: scale(1.1);
+    box-shadow: 0 4px 16px rgba(74, 144, 226, 0.5);
+}
+
+.arrow-control-btn:active {
+    transform: scale(0.95);
+}
+
+.arrow-control-btn svg {
+    width: 18px;
+    height: 18px;
+    fill: #ebebeb;
+}
+
+/* Position arrows around the center */
+.arrow-up {
+    top: -50px;
+    left: 50%;
+    transform: translateX(-50%);
+}
+
+.arrow-down {
+    bottom: -50px;
+    left: 50%;
+    transform: translateX(-50%);
+}
+
+.arrow-left {
+    left: -50px;
+    top: 50%;
+    transform: translateY(-50%);
+}
+
+.arrow-right {
+    right: -50px;
+    top: 50%;
+    transform: translateY(-50%);
+}
+
+.arrow-up:hover {
+    transform: translateX(-50%) scale(1.1);
+}
+
+.arrow-down:hover {
+    transform: translateX(-50%) scale(1.1);
+}
+
+.arrow-left:hover {
+    transform: translateY(-50%) scale(1.1);
+}
+
+.arrow-right:hover {
+    transform: translateY(-50%) scale(1.1);
+}

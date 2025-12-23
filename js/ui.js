@@ -3,13 +3,16 @@ import {
     splatLoaded, floorPlaneMesh, floorPlaneVisible,
     setFloorPlaneVisible, setCurrentSplatPath, setSplatLoaded,
     wallGaussianPositions, wallClusters, wallClusterHelpers,
-    setWallClusterHelpers
+    setWallClusterHelpers, setWallClusters
 } from './utils.js';
 import { generateSplatFromImage, downloadGeneratedPLY, loadSplatFromFolder } from './api.js';
 import { detectFloor, createFloorPlaneVisualization } from './floorDetection.js';
 import { detectWall, collectWallGaussians, clusterWallsByOrientation } from './wallDetection.js';
 import { placeRugAuto } from './rug.js';
-import { createWallDecor, placeWallDecorOnWall, setupWallDecorGUI, removeCurrentWallDecor } from './wallDecor.js';
+import {
+    createWallDecor, placeWallDecorOnWall, setupWallDecorGUI, removeCurrentWallDecor,
+    startWallSelectionMode, handleWallClick, handleWallHover, handleWallDecorHover, setupArrowControls
+} from './wallDecor.js';
 import * as THREE from 'three';
 
 // Placeholder exports
@@ -36,7 +39,6 @@ export function populateRugGrid() {
         grid.appendChild(item);
     });
 }
-
 
 export function populateWallDecorGrid() {
     const grid = document.getElementById('wallDecorGrid');
@@ -78,10 +80,7 @@ export async function selectRug(rugPath) {
     status.style.display = 'block';
 
     try {
-        // Place the rug
         await placeRugAuto(rugPath);
-
-        // Close sidebar after selection
         document.getElementById('rugSidebar').classList.remove('open');
     } catch (error) {
         status.textContent = `Error: ${error.message}`;
@@ -101,20 +100,36 @@ export async function selectWallDecor(decorPath) {
     // Remove old wall decor
     removeCurrentWallDecor();
 
-    status.textContent = 'Detecting wall...';
+    status.textContent = 'Detecting walls...';
     status.style.display = 'block';
 
     try {
         // Detect wall if not already detected
-        if (!detectedWallPlane) {
+        if (wallGaussianPositions.length === 0) {
             const wallDetected = await detectWall();
             if (!wallDetected) {
                 return;
             }
         }
 
+        // Cluster walls if not already done
+        if (wallClusters.length === 0) {
+            status.textContent = 'Clustering walls...';
+            const cameraPos = viewer.camera.position.clone();
+            const minWallWidth = 1.0;
+            const clusters = clusterWallsByOrientation(wallGaussianPositions, cameraPos, minWallWidth);
+            setWallClusters(clusters);
+
+            if (clusters.length === 0) {
+                status.textContent = 'No suitable walls found!';
+                return;
+            }
+
+            console.log(`Found ${clusters.length} suitable walls`);
+        }
+
         // Create and place the wall decor
-        status.textContent = 'Placing wall decor...';
+        status.textContent = 'Creating wall decor...';
         await createWallDecor(decorPath);
 
         // Reset offsets for new placement
@@ -122,13 +137,16 @@ export async function selectWallDecor(decorPath) {
         wallDecorParams.offsetY = 0;
         wallDecorParams.offsetZ = 0.02;
 
-        placeWallDecorOnWall();
+        // Enter wall selection mode
+        const selectionStarted = startWallSelectionMode();
 
-        setupWallDecorGUI();
-        status.textContent = 'Wall decor placed! Drag to move.';
+        if (selectionStarted) {
+            setupWallDecorGUI();
+            document.getElementById('wallDecorSidebar').classList.remove('open');
+        } else {
+            status.textContent = 'Error: Could not start wall selection';
+        }
 
-        // Close sidebar after selection
-        document.getElementById('wallDecorSidebar').classList.remove('open');
     } catch (error) {
         status.textContent = `Error: ${error.message}`;
         console.error(error);
@@ -142,7 +160,21 @@ export function initializeUI(cleanupSceneFunc) {
     populateRugGrid();
     populateWallDecorGrid();
 
-    // Splat select dropdown - load from folder
+    // Setup canvas mouse handlers for wall selection
+    const canvas = viewer.renderer.domElement;
+
+    canvas.addEventListener('click', (event) => {
+        // Try to handle wall selection first
+        const handled = handleWallClick(event);
+        // If not in wall selection mode, other handlers will take over
+    });
+
+    canvas.addEventListener('mousemove', (event) => {
+        handleWallHover(event);
+        handleWallDecorHover(event);
+    });
+
+    // Splat select dropdown
     document.getElementById('splatSelect').addEventListener('change', async (event) => {
         const selectedPath = event.target.value;
         const status = document.getElementById('status');
@@ -184,7 +216,6 @@ export function initializeUI(cleanupSceneFunc) {
         downloadGeneratedPLY();
     });
 
-    // Debug panel download button
     document.getElementById('debugDownloadPlyBtn').addEventListener('click', () => {
         downloadGeneratedPLY();
     });
@@ -194,7 +225,6 @@ export function initializeUI(cleanupSceneFunc) {
         const btn = document.getElementById('toggleFloorBtn');
 
         if (!floorPlaneMesh) {
-            // Detect floor first
             const detected = await detectFloor();
             if (detected && floorPlaneMesh) {
                 floorPlaneMesh.visible = true;
@@ -202,7 +232,6 @@ export function initializeUI(cleanupSceneFunc) {
                 btn.textContent = 'Hide Floor Plane';
             }
         } else {
-            // Toggle visibility
             const newVisibility = !floorPlaneVisible;
             floorPlaneMesh.visible = newVisibility;
             setFloorPlaneVisible(newVisibility);
@@ -241,7 +270,8 @@ export function initializeUI(cleanupSceneFunc) {
         }
 
         const cameraPos = viewer.camera.position.clone();
-        const clusters = clusterWallsByOrientation(wallGaussianPositions, cameraPos);
+        const minWallWidth = 1.0;
+        const clusters = clusterWallsByOrientation(wallGaussianPositions, cameraPos, minWallWidth);
 
         if (clusters.length === 0) {
             status.textContent = 'No wall clusters found!';
@@ -276,27 +306,24 @@ export function initializeUI(cleanupSceneFunc) {
         status.innerHTML = `<strong>${clusters.length} wall clusters visualized!</strong>`;
     });
 
-    // Open rug sidebar
+    // Open/close sidebars
     document.getElementById('openRugBtn').addEventListener('click', () => {
         document.getElementById('rugSidebar').classList.add('open');
     });
 
-    // Close rug sidebar
     document.getElementById('closeRugBtn').addEventListener('click', () => {
         document.getElementById('rugSidebar').classList.remove('open');
     });
 
-    // Open wall decor sidebar
     document.getElementById('openWallDecorBtn').addEventListener('click', () => {
         document.getElementById('wallDecorSidebar').classList.add('open');
     });
 
-    // Close wall decor sidebar
     document.getElementById('closeWallDecorBtn').addEventListener('click', () => {
         document.getElementById('wallDecorSidebar').classList.remove('open');
     });
 
-    // Custom rug upload
+    // Custom uploads
     document.getElementById('customRugInput').addEventListener('change', async (event) => {
         const file = event.target.files[0];
         if (file) {
@@ -308,7 +335,6 @@ export function initializeUI(cleanupSceneFunc) {
         }
     });
 
-    // Custom wall decor upload
     document.getElementById('customWallDecorInput').addEventListener('change', async (event) => {
         const file = event.target.files[0];
         if (file) {
@@ -320,10 +346,9 @@ export function initializeUI(cleanupSceneFunc) {
         }
     });
 
-    // Camera lock/unlock functionality
-    let cameraLocked = true; // Camera is locked by default
+    // Camera lock/unlock
+    let cameraLocked = true;
 
-    // Set camera to locked on initialization
     if (viewer.controls) {
         viewer.controls.enabled = false;
         viewer.controls.enableRotate = false;
@@ -331,7 +356,6 @@ export function initializeUI(cleanupSceneFunc) {
         viewer.controls.enablePan = false;
     }
 
-    // Camera lock/unlock button
     document.getElementById('cameraLockBtn').addEventListener('click', () => {
         const btn = document.getElementById('cameraLockBtn');
         cameraLocked = !cameraLocked;
@@ -347,7 +371,7 @@ export function initializeUI(cleanupSceneFunc) {
         console.log(`Camera ${cameraLocked ? 'locked' : 'unlocked'}`);
     });
 
-    // Keyboard shortcut to hide/show controls
+    // Keyboard shortcuts
     document.addEventListener('keydown', (event) => {
         if (event.key === 'h' || event.key === 'H') {
             const controls = document.getElementById('controls');
@@ -357,7 +381,6 @@ export function initializeUI(cleanupSceneFunc) {
             instructions.style.display = isVisible ? 'none' : 'block';
         }
 
-        // Secret hotkey combination: Ctrl+Shift+D to toggle debug panel
         if (event.ctrlKey && event.shiftKey && event.key === 'D') {
             event.preventDefault();
             const debugPanel = document.getElementById('debugPanel');
@@ -366,6 +389,9 @@ export function initializeUI(cleanupSceneFunc) {
             console.log(`Debug panel ${isVisible ? 'hidden' : 'shown'}`);
         }
     });
+
+    // Setup arrow controls for wall decor positioning
+    setupArrowControls();
 
     console.log('UI fully initialized');
 }
