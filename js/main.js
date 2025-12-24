@@ -62,8 +62,8 @@ export function cleanupScene(clearMaskData = true) {
 // Initialize viewer
 const viewerInstance = new GaussianSplats3D.Viewer({
     cameraUp: [0, -1, 0],
-    initialCameraPosition: [-0.24324, -0.08784, 0.72614],
-    initialCameraLookAt: [-0.24324, -0.08784, 4.05811],
+    initialCameraPosition: [-0.22, -0.08684, 0.75],
+    initialCameraLookAt: [-0.22, -0.08684, 4.05811],
     sphericalHarmonicsDegree: 2,
     sharedMemoryForWorkers: false,
     selfDrivenMode: true,
@@ -73,10 +73,68 @@ const viewerInstance = new GaussianSplats3D.Viewer({
 
 setViewer(viewerInstance);
 
+// Initialize default aspect ratio (16:9 for local scenes)
+// This will be updated when loading splats with aspect ratio metadata
+window.splatAspectRatio = 1920 / 1080; // Default: 16:9 = 1.778
+
+// Move canvas to container and setup letterboxing
+const canvasContainer = document.getElementById('canvasContainer');
+const canvas = viewerInstance.renderer.domElement;
+canvasContainer.appendChild(canvas);
+
+// Update viewport with CSS-based letterboxing
+function updateViewport() {
+    const windowWidth = window.innerWidth;
+    const windowHeight = window.innerHeight;
+    const windowAspect = windowWidth / windowHeight;
+    const targetAspect = window.splatAspectRatio || (1920 / 1080);
+
+    let containerWidth, containerHeight;
+
+    if (windowAspect > targetAspect) {
+        // Window is wider - pillarbox (black bars on sides)
+        containerHeight = windowHeight;
+        containerWidth = Math.floor(windowHeight * targetAspect);
+    } else {
+        // Window is narrower - letterbox (black bars on top/bottom)
+        containerWidth = windowWidth;
+        containerHeight = Math.floor(windowWidth / targetAspect);
+    }
+
+    // Update container size
+    canvasContainer.style.width = containerWidth + 'px';
+    canvasContainer.style.height = containerHeight + 'px';
+
+    // Update renderer size (this handles canvas sizing automatically)
+    viewerInstance.renderer.setSize(containerWidth, containerHeight, true);
+
+    // Update camera aspect to match target
+    viewerInstance.camera.aspect = targetAspect;
+    viewerInstance.camera.updateProjectionMatrix();
+
+    // Update viewport to match container size
+    viewerInstance.renderer.setViewport(0, 0, containerWidth, containerHeight);
+
+    console.log(`Viewport: ${containerWidth}x${containerHeight} - aspect: ${targetAspect.toFixed(3)}`);
+}
+
+// Export viewport update function
+window.updateSplatViewport = updateViewport;
+
+// Debounce resize to avoid too many calls
+let resizeTimeout;
+window.addEventListener('resize', () => {
+    clearTimeout(resizeTimeout);
+    resizeTimeout = setTimeout(updateViewport, 16); // ~60fps
+});
+
+// Initial viewport setup
+updateViewport();
+
 // Camera position lock system (works without built-in controls)
 // These match the viewer's initial camera settings
-const initialCameraPos = new THREE.Vector3(-0.24324, -0.08784, 0.72614);
-const initialCameraLookAt = new THREE.Vector3(-0.24324, -0.08784, 4.05811);
+const initialCameraPos = new THREE.Vector3(-0.22, -0.08684, 0.75);
+const initialCameraLookAt = new THREE.Vector3(-0.22, -0.08684, 4.05811);
 let cameraResetPaused = false; // Pause during rug/wall manipulation
 
 // Export function to pause/resume camera reset

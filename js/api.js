@@ -13,6 +13,69 @@ import {
 import JSZip from 'jszip';
 
 /**
+ * Decompress gzipped data from base64 string
+ * @param {string} base64String - Base64-encoded gzipped data
+ * @returns {Promise<string>} - Decompressed base64 data
+ */
+async function decompressGzipBase64(base64String) {
+    const startTime = performance.now();
+
+    // Decode base64 to binary
+    const binaryString = atob(base64String);
+    const compressedBytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+        compressedBytes[i] = binaryString.charCodeAt(i);
+    }
+
+    // Decompress using browser's DecompressionStream API
+    const blob = new Blob([compressedBytes]);
+    const stream = blob.stream().pipeThrough(new DecompressionStream('gzip'));
+    const decompressedBlob = await new Response(stream).blob();
+    const decompressedBytes = new Uint8Array(await decompressedBlob.arrayBuffer());
+
+    // Convert back to base64
+    let decompressedBinary = '';
+    const chunkSize = 0x8000; // Process in chunks to avoid stack overflow
+    for (let i = 0; i < decompressedBytes.length; i += chunkSize) {
+        const chunk = decompressedBytes.subarray(i, i + chunkSize);
+        decompressedBinary += String.fromCharCode.apply(null, chunk);
+    }
+    const decompressedBase64 = btoa(decompressedBinary);
+
+    const elapsed = performance.now() - startTime;
+    console.log(`Decompressed PLY: ${(compressedBytes.length / 1024 / 1024).toFixed(2)}MB → ${(decompressedBytes.length / 1024 / 1024).toFixed(2)}MB in ${elapsed.toFixed(0)}ms`);
+
+    return decompressedBase64;
+}
+
+/**
+ * Decode bitpacked boolean mask from base64 string
+ * @param {string} base64String - Base64-encoded packed bits
+ * @param {number} length - Original length of boolean array
+ * @returns {boolean[]} - Unpacked boolean array
+ */
+function decodeBitpackedMask(base64String, length) {
+    // Decode base64 to binary
+    const binaryString = atob(base64String);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+    }
+
+    // Unpack bits to boolean array
+    const boolArray = [];
+    for (let i = 0; i < length; i++) {
+        const byteIndex = Math.floor(i / 8);
+        const bitIndex = 7 - (i % 8); // MSB first (numpy packbits convention)
+        const bit = (bytes[byteIndex] >> bitIndex) & 1;
+        boolArray.push(bit === 1);
+    }
+
+    console.log(`Decoded bitpacked mask: ${bytes.length} bytes → ${boolArray.length} booleans`);
+    return boolArray;
+}
+
+/**
  * Call the Sharp API to generate splat from image
  */
 export async function generateSplatFromImage(imageFile, cleanupSceneFunc) {
@@ -26,6 +89,17 @@ export async function generateSplatFromImage(imageFile, cleanupSceneFunc) {
     // Disable button and show loading state
     generateBtn.disabled = true;
     generateBtn.textContent = 'Generating...';
+
+    // Get original image dimensions
+    const imageAspectRatio = await new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => {
+            const aspect = img.width / img.height;
+            console.log(`Original image: ${img.width}x${img.height} (aspect: ${aspect.toFixed(3)})`);
+            resolve(aspect);
+        };
+        img.src = URL.createObjectURL(imageFile);
+    });
 
     try {
         const formData = new FormData();
@@ -79,10 +153,29 @@ export async function generateSplatFromImage(imageFile, cleanupSceneFunc) {
         const text = new TextDecoder("utf-8").decode(chunksAll);
         const result = JSON.parse(text);
 
-        // Store base64 data
-        setGeneratedSplatData(result.ply);
-        setFloorMaskData(result.floor_mask_3d);
-        setWallMaskData(result.wall_mask_3d);
+        // Decompress PLY if it's gzipped (new format)
+        status.textContent = result.ply_compressed ? 'Decompressing PLY data...' : 'Processing PLY data...';
+        const plyData = result.ply_compressed
+            ? await decompressGzipBase64(result.ply)
+            : result.ply; // Fallback for old format
+
+        // Decode compressed boolean masks (bitpacked format)
+        const floorMask3D = result.floor_mask_3d_length
+            ? decodeBitpackedMask(result.floor_mask_3d, result.floor_mask_3d_length)
+            : result.floor_mask_3d; // Fallback for old format
+
+        const wallMask3D = result.wall_mask_3d_length
+            ? decodeBitpackedMask(result.wall_mask_3d, result.wall_mask_3d_length)
+            : result.wall_mask_3d; // Fallback for old format
+
+        // Store base64 data (decompressed PLY) and aspect ratio
+        setGeneratedSplatData(plyData);
+        setFloorMaskData(floorMask3D);
+        setWallMaskData(wallMask3D);
+
+        // Store aspect ratio in window for viewport adjustment
+        window.splatAspectRatio = imageAspectRatio;
+        console.log('Stored aspect ratio:', imageAspectRatio.toFixed(3));
 
         console.log('Response size:', receivedLength, 'bytes (', (receivedLength / 1024 / 1024).toFixed(2), 'MB)');
 
@@ -106,6 +199,11 @@ export async function generateSplatFromImage(imageFile, cleanupSceneFunc) {
 
         console.log('View type:', viewType, '→ Floor orientation: horizontal');
         status.innerHTML = `<strong>Loading splat...</strong>`;
+
+        // Trigger viewport update with new aspect ratio
+        if (window.updateSplatViewport) {
+            window.updateSplatViewport();
+        }
 
         // Load the generated splat
         loadGeneratedSplat(cleanupSceneFunc);
@@ -171,8 +269,8 @@ export async function loadGeneratedSplat(cleanupSceneFunc) {
         setSplatLoaded(true);
 
         // Position camera to view splat like an image (matching splat.html)
-        const cameraPosition = new THREE.Vector3(-0.24324, -0.08784, 0.72614);
-        const lookAtPoint = new THREE.Vector3(-0.24324, -0.08784, 4.05811);
+        const cameraPosition = new THREE.Vector3(-0.22, -0.08684, 0.75);
+        const lookAtPoint = new THREE.Vector3(-0.22, -0.08684, 4.05811);
         viewer.camera.position.copy(cameraPosition);
         viewer.camera.lookAt(lookAtPoint);
         if (viewer.controls) {
@@ -241,13 +339,17 @@ export async function downloadGeneratedPLY() {
         }
         zip.file('room.ply', bytes);
 
-        // Add metadata JSON with floor and wall masks
+        // Add metadata JSON with floor and wall masks (use compressed format if available)
         const metadata = {
-            version: '1.0',
+            version: '2.1', // Bumped version for aspect ratio support
             type: 'sharp-room-splat',
             created: new Date().toISOString(),
+            aspectRatio: window.splatAspectRatio || 1920 / 1080, // Store aspect ratio
             floorMask: floorMaskData || null,
-            wallMask: wallMaskData || null
+            wallMask: wallMaskData || null,
+            // Add length info for compressed format compatibility
+            floorMaskLength: floorMaskData ? floorMaskData.length : 0,
+            wallMaskLength: wallMaskData ? wallMaskData.length : 0
         };
 
         zip.file('metadata.json', JSON.stringify(metadata, null, 2));
@@ -300,6 +402,15 @@ export async function loadSplatFromFolder(folderPath, cleanupSceneFunc) {
         const metadata = await metadataResponse.json();
         console.log('Metadata loaded:', metadata);
 
+        // Set aspect ratio from metadata (default to 16:9 for local scenes)
+        window.splatAspectRatio = metadata.aspectRatio || (1920 / 1080);
+        console.log('Aspect ratio:', window.splatAspectRatio.toFixed(3));
+
+        // Trigger viewport update with new aspect ratio
+        if (window.updateSplatViewport) {
+            window.updateSplatViewport();
+        }
+
         // Load the PLY file
         const plyUrl = `${folderPath}/room.ply`;
         status.textContent = 'Loading splat scene...';
@@ -307,13 +418,22 @@ export async function loadSplatFromFolder(folderPath, cleanupSceneFunc) {
         // Clean up old scene FIRST - clear everything including old mask data
         cleanupSceneFunc(true);
 
+        // Decode masks (handle both compressed and legacy formats)
+        const floorMask = metadata.floorMaskLength
+            ? decodeBitpackedMask(metadata.floorMask, metadata.floorMaskLength)
+            : metadata.floorMask; // Legacy format (uncompressed array)
+
+        const wallMask = metadata.wallMaskLength
+            ? decodeBitpackedMask(metadata.wallMask, metadata.wallMaskLength)
+            : metadata.wallMask; // Legacy format (uncompressed array)
+
         // Then set the NEW scene's mask data
-        setFloorMaskData(metadata.floorMask || null);
-        setWallMaskData(metadata.wallMask || null);
+        setFloorMaskData(floorMask || null);
+        setWallMaskData(wallMask || null);
         setFloorOrientation('horizontal');
 
-        console.log('Floor mask:', metadata.floorMask ? metadata.floorMask.length : 0, 'values');
-        console.log('Wall mask:', metadata.wallMask ? metadata.wallMask.length : 0, 'values');
+        console.log('Floor mask:', floorMask ? floorMask.length : 0, 'values');
+        console.log('Wall mask:', wallMask ? wallMask.length : 0, 'values');
 
         // Remove old splat
         if (viewer.splatMesh) {
@@ -332,8 +452,8 @@ export async function loadSplatFromFolder(folderPath, cleanupSceneFunc) {
         setSplatLoaded(true);
 
         // Position camera to view splat like an image (matching splat.html)
-        const cameraPosition = new THREE.Vector3(-0.24324, -0.08784, 0.72614);
-        const lookAtPoint = new THREE.Vector3(-0.24324, -0.08784, 4.05811);
+        const cameraPosition = new THREE.Vector3(-0.22, -0.08684, 0.75);
+        const lookAtPoint = new THREE.Vector3(-0.22, -0.08684, 4.05811);
         viewer.camera.position.copy(cameraPosition);
         viewer.camera.lookAt(lookAtPoint);
         if (viewer.controls) {
@@ -415,14 +535,25 @@ export async function loadSplatFromZip(zipFile, cleanupSceneFunc) {
             const metadataText = await metadataFile.async('text');
             const metadata = JSON.parse(metadataText);
 
-            floorMask = metadata.floorMask || null;
-            wallMask = metadata.wallMask || null;
+            // Decode masks (handle both compressed and legacy formats)
+            floorMask = metadata.floorMaskLength
+                ? decodeBitpackedMask(metadata.floorMask, metadata.floorMaskLength)
+                : metadata.floorMask || null; // Legacy format
+
+            wallMask = metadata.wallMaskLength
+                ? decodeBitpackedMask(metadata.wallMask, metadata.wallMaskLength)
+                : metadata.wallMask || null; // Legacy format
+
+            // Set aspect ratio from metadata (default to 16:9)
+            window.splatAspectRatio = metadata.aspectRatio || (1920 / 1080);
 
             console.log('Metadata loaded:');
+            console.log('  - Aspect ratio:', window.splatAspectRatio.toFixed(3));
             console.log('  - Floor mask:', floorMask ? floorMask.length : 0, 'values');
             console.log('  - Wall mask:', wallMask ? wallMask.length : 0, 'values');
         } else {
-            console.warn('No metadata.json found in ZIP - masks will not be available');
+            console.warn('No metadata.json found in ZIP - using default 16:9 aspect ratio');
+            window.splatAspectRatio = 1920 / 1080;
         }
 
         // Store the data
@@ -430,6 +561,11 @@ export async function loadSplatFromZip(zipFile, cleanupSceneFunc) {
         setFloorMaskData(floorMask);
         setWallMaskData(wallMask);
         setFloorOrientation('horizontal');
+
+        // Trigger viewport update with new aspect ratio
+        if (window.updateSplatViewport) {
+            window.updateSplatViewport();
+        }
 
         // Load the splat
         status.textContent = 'Loading splat scene...';
