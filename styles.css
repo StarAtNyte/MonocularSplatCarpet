@@ -20,6 +20,7 @@ body {
     transform: translate(-50%, -50%);
     background: #000;
     z-index: 0;
+    overflow: hidden;
 }
 
 #canvasContainer canvas {
@@ -229,10 +230,10 @@ body {
 
 .lil-gui.root {
     width: var(--width);
-    top: 20px !important;
-    right: 20px !important;
+    right: 20px;
     z-index: 3000 !important;
     position: fixed !important;
+    transition: right 0.3s ease, top 0.2s ease;
 }
 
 .progressBarOuterContainer {

@@ -105,17 +105,17 @@ function updateViewport() {
     canvasContainer.style.width = containerWidth + 'px';
     canvasContainer.style.height = containerHeight + 'px';
 
-    // Update renderer size (this handles canvas sizing automatically)
-    viewerInstance.renderer.setSize(containerWidth, containerHeight, true);
+    // Update renderer size and get canvas reference
+    const canvas = viewerInstance.renderer.domElement;
+    viewerInstance.renderer.setSize(containerWidth, containerHeight, false);
+
+    // Manually set canvas style dimensions to match container exactly
+    canvas.style.width = containerWidth + 'px';
+    canvas.style.height = containerHeight + 'px';
 
     // Update camera aspect to match target
     viewerInstance.camera.aspect = targetAspect;
     viewerInstance.camera.updateProjectionMatrix();
-
-    // Update viewport to match container size
-    viewerInstance.renderer.setViewport(0, 0, containerWidth, containerHeight);
-
-    console.log(`Viewport: ${containerWidth}x${containerHeight} - aspect: ${targetAspect.toFixed(3)}`);
 }
 
 // Export viewport update function
@@ -186,6 +186,25 @@ loadSplatFromFolder(currentSplatPath, cleanupScene)
     .then(() => {
         // Setup mouse event listeners
         const canvas = viewerInstance.renderer.domElement;
+
+        // Fix: Disable pointer events on the viewer's overlay DIV
+        // The Gaussian Splats viewer creates a blocking overlay - find it via the canvas parent
+        if (canvas.parentElement) {
+            const siblings = Array.from(canvas.parentElement.children);
+            siblings.forEach(sibling => {
+                if (sibling !== canvas && sibling.tagName === 'DIV') {
+                    sibling.style.pointerEvents = 'none';
+                }
+            });
+        }
+
+        // Also check for any absolutely positioned full-size divs in the body
+        Array.from(document.body.children).forEach(child => {
+            if (child.tagName === 'DIV' && child.style.position === 'absolute' &&
+                child.style.width === '100%' && child.style.height === '100%') {
+                child.style.pointerEvents = 'none';
+            }
+        });
 
         // Combined mouse down handler
         canvas.addEventListener('mousedown', (event) => {

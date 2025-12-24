@@ -386,20 +386,41 @@ export function setupRugGUI() {
         }
     });
 
-    const posFolder = newGui.addFolder('Position Offset');
-    posFolder.add(rugParams, 'offsetX', -3, 3, 0.01).name('X').onChange(() => updateRugPosition());
-    posFolder.add(rugParams, 'offsetY', -0.5, 0.5, 0.001).name('Y').onChange(() => updateRugPosition());
-    posFolder.add(rugParams, 'offsetZ', -3, 3, 0.01).name('Z').onChange(() => updateRugPosition());
-    posFolder.open();
-
-    const transformFolder = newGui.addFolder('Transform');
-    transformFolder.add(rugParams, 'rotation', 0, 360, 1).name('Rotation (°)').onChange(() => updateRug(true));
-    transformFolder.add(rugParams, 'scale', 0.1, 10, 0.01).name('Scale').onChange(() => updateRug(true));
-    transformFolder.open();
+    newGui.add(rugParams, 'rotation', 0, 360, 1).name('Rotation (°)').onChange(() => updateRug(true));
+    newGui.add(rugParams, 'scale', 0.1, 10, 0.01).name('Scale').onChange(() => updateRug(true));
 
     // Add remove button
     const removeButton = { remove: () => removeCurrentRug() };
     newGui.add(removeButton, 'remove').name('🗑️ Remove Rug');
+
+    // Stack GUI controls after creating this one
+    requestAnimationFrame(() => {
+        const guiElements = Array.from(document.querySelectorAll('.lil-gui.root'));
+        let currentTop = 20;
+        const gap = 12;
+        guiElements.forEach((gui) => {
+            gui.style.top = currentTop + 'px';
+            const height = gui.offsetHeight;
+            currentTop += height + gap;
+        });
+
+        // Add click listener to title bar for collapse/expand
+        const titleBar = newGui.domElement.querySelector('.title');
+        if (titleBar) {
+            titleBar.addEventListener('click', () => {
+                setTimeout(() => {
+                    const guiElements = Array.from(document.querySelectorAll('.lil-gui.root'));
+                    let currentTop = 20;
+                    const gap = 12;
+                    guiElements.forEach((gui) => {
+                        gui.style.top = currentTop + 'px';
+                        const height = gui.offsetHeight;
+                        currentTop += height + gap;
+                    });
+                }, 50);
+            });
+        }
+    });
 }
 
 export function removeCurrentRug() {
@@ -440,6 +461,18 @@ export function removeCurrentRug() {
     });
     setCornerHandles([]);
     setGizmoVisible(false);
+
+    // Restack remaining GUI controls
+    requestAnimationFrame(() => {
+        const guiElements = Array.from(document.querySelectorAll('.lil-gui.root'));
+        let currentTop = 20;
+        const gap = 12;
+        guiElements.forEach((gui) => {
+            gui.style.top = currentTop + 'px';
+            const height = gui.offsetHeight;
+            currentTop += height + gap;
+        });
+    });
 }
 
 export async function placeRugAuto(rugTextureUrl) {

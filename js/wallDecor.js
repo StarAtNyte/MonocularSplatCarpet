@@ -1002,16 +1002,8 @@ export function setupWallDecorGUI() {
         }
     });
 
-    const posFolder = newWallDecorGui.addFolder('Position Offset');
-    posFolder.add(wallDecorParams, 'offsetX', -3, 3, 0.01).name('X (horizontal)').onChange(() => updateWallDecorPosition());
-    posFolder.add(wallDecorParams, 'offsetY', -3, 3, 0.01).name('Y (vertical)').onChange(() => updateWallDecorPosition());
-    posFolder.add(wallDecorParams, 'offsetZ', -0.5, 0.5, 0.001).name('Z (depth)').onChange(() => updateWallDecorPosition());
-    posFolder.open();
-
-    const transformFolder = newWallDecorGui.addFolder('Transform');
-    transformFolder.add(wallDecorParams, 'scale', 0.1, 10, 0.01).name('Scale').onChange(() => updateWallDecor(true));
-    transformFolder.add(wallDecorParams, 'rotation', 0, 360, 1).name('Rotation').onChange(() => updateWallDecor(true));
-    transformFolder.open();
+    newWallDecorGui.add(wallDecorParams, 'scale', 0.1, 10, 0.01).name('Scale').onChange(() => updateWallDecor(true));
+    newWallDecorGui.add(wallDecorParams, 'rotation', 0, 360, 1).name('Rotation').onChange(() => updateWallDecor(true));
 
     // Add remove button
     const removeButton = { remove: () => removeCurrentWallDecor() };
@@ -1021,6 +1013,35 @@ export function setupWallDecorGUI() {
     hint.style.cssText = 'padding: 8px; background: #1a2a1a; color: #90ee90; border-radius: 4px; font-size: 11px; margin-top: 8px; border: 1px solid #2a4a2a;';
     hint.innerHTML = 'Drag to move<br> Drag orange handle to rotate<br> Drag blue corners to resize';
     newWallDecorGui.domElement.appendChild(hint);
+
+    // Stack GUI controls after creating this one
+    requestAnimationFrame(() => {
+        const guiElements = Array.from(document.querySelectorAll('.lil-gui.root'));
+        let currentTop = 20;
+        const gap = 12;
+        guiElements.forEach((gui) => {
+            gui.style.top = currentTop + 'px';
+            const height = gui.offsetHeight;
+            currentTop += height + gap;
+        });
+
+        // Add click listener to title bar for collapse/expand
+        const titleBar = newWallDecorGui.domElement.querySelector('.title');
+        if (titleBar) {
+            titleBar.addEventListener('click', () => {
+                setTimeout(() => {
+                    const guiElements = Array.from(document.querySelectorAll('.lil-gui.root'));
+                    let currentTop = 20;
+                    const gap = 12;
+                    guiElements.forEach((gui) => {
+                        gui.style.top = currentTop + 'px';
+                        const height = gui.offsetHeight;
+                        currentTop += height + gap;
+                    });
+                }, 50);
+            });
+        }
+    });
 }
 
 // ========== CLEANUP ==========
@@ -1065,6 +1086,18 @@ export function removeCurrentWallDecor() {
         wallDecorGui.destroy();
         setWallDecorGui(null);
     }
+
+    // Restack remaining GUI controls
+    requestAnimationFrame(() => {
+        const guiElements = Array.from(document.querySelectorAll('.lil-gui.root'));
+        let currentTop = 20;
+        const gap = 12;
+        guiElements.forEach((gui) => {
+            gui.style.top = currentTop + 'px';
+            const height = gui.offsetHeight;
+            currentTop += height + gap;
+        });
+    });
 }
 
 export { isWallSelectionMode };

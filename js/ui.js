@@ -201,12 +201,71 @@ export async function selectWallDecor(decorPath) {
     }
 }
 
+// Helper function to stack GUI controls vertically
+function stackGUIControls() {
+    const guiElements = Array.from(document.querySelectorAll('.lil-gui.root'));
+
+    let currentTop = 20; // Starting top position
+    const gap = 12; // Gap between panels
+
+    guiElements.forEach((gui, index) => {
+        gui.style.top = currentTop + 'px';
+        // Get the actual height of this GUI panel
+        const height = gui.offsetHeight;
+        currentTop += height + gap;
+    });
+}
+
+// Set up MutationObserver to watch for GUI changes (collapse/expand)
+let guiObserver = null;
+
+function setupGUIObserver() {
+    // Disconnect existing observer if any
+    if (guiObserver) {
+        guiObserver.disconnect();
+    }
+
+    guiObserver = new MutationObserver(() => {
+        // Debounce the stacking to avoid too many calls
+        clearTimeout(window._stackTimeout);
+        window._stackTimeout = setTimeout(() => {
+            stackGUIControls();
+        }, 10);
+    });
+
+    // Observe all GUI elements for changes
+    const observeGUIs = () => {
+        const guiElements = document.querySelectorAll('.lil-gui.root');
+        guiElements.forEach(gui => {
+            guiObserver.observe(gui, {
+                attributes: true,
+                childList: true,
+                subtree: true,
+                attributeFilter: ['class', 'style']
+            });
+        });
+    };
+
+    observeGUIs();
+
+    // Re-observe when new GUIs are added
+    const bodyObserver = new MutationObserver(() => {
+        observeGUIs();
+        stackGUIControls();
+    });
+
+    bodyObserver.observe(document.body, {
+        childList: true,
+        subtree: true
+    });
+}
+
 // Helper functions to manage control visibility when sidebars open/close
 function hideAllControls() {
-    // Hide lil-gui controls
+    // Push lil-gui controls to the left when sidebar opens
     const guiElements = document.querySelectorAll('.lil-gui.root');
     guiElements.forEach(gui => {
-        gui.style.display = 'none';
+        gui.style.right = '300px';
     });
 
     // Hide wall decor arrow controls
@@ -217,10 +276,10 @@ function hideAllControls() {
 }
 
 function showAllControls() {
-    // Show lil-gui controls
+    // Return lil-gui controls to original position
     const guiElements = document.querySelectorAll('.lil-gui.root');
     guiElements.forEach(gui => {
-        gui.style.display = '';
+        gui.style.right = '20px';
     });
 
     // Show wall decor arrow controls (if they were visible before)
@@ -228,10 +287,18 @@ function showAllControls() {
     if (arrowControls && arrowControls.classList.contains('visible')) {
         arrowControls.style.display = '';
     }
+
+    // Stack GUI controls after showing them - use a longer delay to ensure transition completes
+    setTimeout(() => {
+        stackGUIControls();
+    }, 50);
 }
 
 export function initializeUI(cleanupSceneFunc) {
     console.log('Initializing UI...');
+
+    // Set up GUI observer for collapse/expand detection
+    setupGUIObserver();
 
     // Populate grids
     populateRugGrid();
