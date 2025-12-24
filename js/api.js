@@ -8,7 +8,8 @@ import {
     setFloorMaskData,
     setWallMaskData,
     setFloorOrientation,
-    setSplatLoaded
+    setSplatLoaded,
+    setIsLoadingScene
 } from './utils.js';
 import JSZip from 'jszip';
 
@@ -88,7 +89,7 @@ export async function generateSplatFromImage(imageFile, cleanupSceneFunc) {
 
     // Disable button and show loading state
     generateBtn.disabled = true;
-    generateBtn.textContent = 'Generating...';
+    generateBtn.textContent = 'Processing...';
 
     // Get original image dimensions
     const imageAspectRatio = await new Promise((resolve) => {
@@ -107,7 +108,7 @@ export async function generateSplatFromImage(imageFile, cleanupSceneFunc) {
 
         const apiUrl = 'https://nitizkhanal00--sharp-api-myroom-v2-fastapi-app.modal.run/predict';
 
-        status.innerHTML = '<strong>Generating splat...</strong><br>This may take 1-2 minutes. Please wait.';
+        status.innerHTML = '<strong>Processing your room...</strong><br>This may take 1-2 minutes. Please wait.';
 
         const response = await fetch(apiUrl, {
             method: 'POST',
@@ -383,6 +384,15 @@ export async function downloadGeneratedPLY() {
 export async function loadSplatFromFolder(folderPath, cleanupSceneFunc) {
     const status = document.getElementById('status');
 
+    // Set loading state to prevent scene changes
+    setIsLoadingScene(true);
+
+    // Disable scene selector dropdown
+    const splatSelect = document.getElementById('splatSelect');
+    if (splatSelect) {
+        splatSelect.disabled = true;
+    }
+
     try {
         status.style.display = 'block';
         status.textContent = 'Loading room...';
@@ -419,11 +429,12 @@ export async function loadSplatFromFolder(folderPath, cleanupSceneFunc) {
         cleanupSceneFunc(true);
 
         // Decode masks (handle both compressed and legacy formats)
-        const floorMask = metadata.floorMaskLength
+        // Check if mask is already an array (legacy) or a base64 string (compressed)
+        const floorMask = metadata.floorMaskLength && typeof metadata.floorMask === 'string'
             ? decodeBitpackedMask(metadata.floorMask, metadata.floorMaskLength)
             : metadata.floorMask; // Legacy format (uncompressed array)
 
-        const wallMask = metadata.wallMaskLength
+        const wallMask = metadata.wallMaskLength && typeof metadata.wallMask === 'string'
             ? decodeBitpackedMask(metadata.wallMask, metadata.wallMaskLength)
             : metadata.wallMask; // Legacy format (uncompressed array)
 
@@ -479,12 +490,19 @@ export async function loadSplatFromFolder(folderPath, cleanupSceneFunc) {
         // Camera controls remain in their current state (locked/unlocked via UI button)
 
         status.textContent = 'Room loaded! Click "Place Rug" to select and place a rug.';
-        console.log('✅ Splat loaded from folder successfully!');
+        console.log('Splat loaded from folder successfully!');
 
     } catch (error) {
         console.error('Error loading from folder:', error);
         status.textContent = `Error loading room: ${error.message}`;
         throw error;
+    } finally {
+        // Always re-enable scene selector and clear loading state
+        setIsLoadingScene(false);
+        const splatSelect = document.getElementById('splatSelect');
+        if (splatSelect) {
+            splatSelect.disabled = false;
+        }
     }
 }
 
@@ -536,11 +554,12 @@ export async function loadSplatFromZip(zipFile, cleanupSceneFunc) {
             const metadata = JSON.parse(metadataText);
 
             // Decode masks (handle both compressed and legacy formats)
-            floorMask = metadata.floorMaskLength
+            // Check if mask is already an array (legacy) or a base64 string (compressed)
+            floorMask = metadata.floorMaskLength && typeof metadata.floorMask === 'string'
                 ? decodeBitpackedMask(metadata.floorMask, metadata.floorMaskLength)
                 : metadata.floorMask || null; // Legacy format
 
-            wallMask = metadata.wallMaskLength
+            wallMask = metadata.wallMaskLength && typeof metadata.wallMask === 'string'
                 ? decodeBitpackedMask(metadata.wallMask, metadata.wallMaskLength)
                 : metadata.wallMask || null; // Legacy format
 

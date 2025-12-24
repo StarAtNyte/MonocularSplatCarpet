@@ -14,6 +14,7 @@ export let gui = null;
 export let wallDecorGui = null;
 export let customRugTexture = null;
 export let splatLoaded = false;
+export let isLoadingScene = false; // Prevents scene changes during loading
 export let currentSplatPath = 'splats/room1';
 export let lastCameraPosition = null;
 export const cameraMovementThreshold = 0.5;
@@ -76,7 +77,8 @@ export const rugParams = {
     offsetY: 0.0,
     offsetZ: 0,
     rotation: 0,
-    scale: 0.5
+    scale: 0.5,
+    brightness: 1.0
 };
 
 // Setters for global state (to allow other modules to update these)
@@ -91,6 +93,7 @@ export function setGui(g) { gui = g; }
 export function setWallDecorGui(g) { wallDecorGui = g; }
 export function setCustomRugTexture(t) { customRugTexture = t; }
 export function setSplatLoaded(l) { splatLoaded = l; }
+export function setIsLoadingScene(l) { isLoadingScene = l; }
 export function setCurrentSplatPath(p) { currentSplatPath = p; }
 export function setLastCameraPosition(p) { lastCameraPosition = p; }
 export function setGeneratedSplatData(d) { generatedSplatData = d; }

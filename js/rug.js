@@ -32,23 +32,48 @@ function placeRugOnHorizontalFloor(plane, cameraPos, cameraDir) {
 
     let position;
     if (ray.intersectPlane(floorPlane, rayTarget)) {
-        // Use the intersection point, but limit the distance to keep rug close
-        const distanceToIntersection = cameraPos.distanceTo(rayTarget);
-        const maxDistance = 2.5; // Maximum 2.5 meters from camera
+        // Check if intersection is in front of camera
+        const directionToTarget = rayTarget.clone().sub(cameraPos);
+        const dotProduct = directionToTarget.dot(rayDir);
 
-        if (distanceToIntersection > maxDistance) {
-            // Place at fixed distance along camera direction, then project to floor
-            const targetPoint = cameraPos.clone().add(rayDir.clone().multiplyScalar(maxDistance));
+        if (dotProduct < 0) {
+            // Intersection is behind camera (ray pointing away from floor)
+            const defaultDistance = 1.5;
+            const targetPoint = cameraPos.clone().add(rayDir.clone().multiplyScalar(defaultDistance));
             position = floorPlane.projectPoint(targetPoint, new THREE.Vector3());
-            console.log(`Rug placed at clamped distance (${maxDistance}m) from camera`);
+            console.log(`Ray intersection behind camera, placed ${defaultDistance}m in front instead`);
         } else {
-            position = rayTarget.clone();
-            console.log('Rug placed at camera ray intersection with floor');
+            // Use the intersection point, but limit the distance to keep rug close
+            const distanceToIntersection = cameraPos.distanceTo(rayTarget);
+            const maxDistance = 2.5; // Maximum 2.5 meters from camera
+
+            if (distanceToIntersection > maxDistance) {
+                // Place at fixed distance along camera direction, then project to floor
+                const targetPoint = cameraPos.clone().add(rayDir.clone().multiplyScalar(maxDistance));
+                position = floorPlane.projectPoint(targetPoint, new THREE.Vector3());
+                console.log(`Rug placed at clamped distance (${maxDistance}m) from camera`);
+            } else {
+                position = rayTarget.clone();
+                console.log('Rug placed at camera ray intersection with floor');
+            }
         }
     } else {
         // Fallback: project camera position down onto floor
         position = floorPlane.projectPoint(cameraPos, new THREE.Vector3());
-        console.log('Rug placed at camera projection onto floor');
+
+        // Check if the projected position is behind the camera
+        const directionToRug = position.clone().sub(cameraPos);
+        const dotProduct = directionToRug.dot(rayDir);
+
+        if (dotProduct < 0) {
+            // Rug is behind camera, place it in front instead
+            const defaultDistance = 1.5; // 1.5 meters in front
+            const targetPoint = cameraPos.clone().add(rayDir.clone().multiplyScalar(defaultDistance));
+            position = floorPlane.projectPoint(targetPoint, new THREE.Vector3());
+            console.log(`Rug was behind camera, placed ${defaultDistance}m in front instead`);
+        } else {
+            console.log('Rug placed at camera projection onto floor');
+        }
     }
 
     // Add small offset along floor normal to place rug slightly above the floor plane
@@ -137,6 +162,11 @@ function updateRug(skipPositionRecalc = false) {
 
         rug.scale.set(rugParams.scale, rugParams.scale, rugParams.scale);
         rug.visible = rugParams.visible;
+
+        // Update brightness
+        if (rug.material) {
+            rug.material.color.setRGB(rugParams.brightness, rugParams.brightness, rugParams.brightness);
+        }
     }
     updateGizmo();
 }
@@ -220,12 +250,13 @@ export function createRug(textureUrl) {
             const rugHeight = rugWidth * aspectRatio;
 
             // Use BoxGeometry instead of PlaneGeometry to give the rug thickness/depth
-            const rugDepth = 0.01; // Add some thickness to the rug 
+            const rugDepth = 0.01; // Add some thickness to the rug
             const geometry = new THREE.BoxGeometry(rugWidth, rugHeight, rugDepth);
             const material = new THREE.MeshBasicMaterial({
                 map: texture,
                 side: THREE.DoubleSide,
-                transparent: true
+                transparent: true,
+                color: new THREE.Color(rugParams.brightness, rugParams.brightness, rugParams.brightness)
             });
 
             const rugMesh = new THREE.Mesh(geometry, material);
@@ -388,6 +419,7 @@ export function setupRugGUI() {
 
     newGui.add(rugParams, 'rotation', 0, 360, 1).name('Rotation (°)').onChange(() => updateRug(true));
     newGui.add(rugParams, 'scale', 0.1, 10, 0.01).name('Scale').onChange(() => updateRug(true));
+    newGui.add(rugParams, 'brightness', 0.1, 2.0, 0.01).name('Brightness').onChange(() => updateRug(true));
 
     // Add remove button
     const removeButton = { remove: () => removeCurrentRug() };

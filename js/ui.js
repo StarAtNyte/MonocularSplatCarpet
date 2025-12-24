@@ -23,6 +23,7 @@ export function populateRugGrid() {
 
     const rugs = [
         { name: 'Atlantede', path: 'assets/rugs/Atlantede.jpg' },
+        { name: 'Cubinia', path: 'assets/rugs/Cubinia.png' },
         { name: 'Easther', path: 'assets/rugs/Easther.jpg' },
         { name: 'Tappeto Classico', path: 'assets/rugs/Tappeto Classico.jpg' },
         { name: 'Tappeto Classico Sea Green', path: 'assets/rugs/Tappeto Classico Sea Green .jpg' },
@@ -159,23 +160,20 @@ export async function selectWallDecor(decorPath) {
         loaderProgress.textContent = '';
 
         await createWallDecor(decorPath);
-        console.log('✅ Wall decor created successfully');
 
         // Reset offsets for new placement
         wallDecorParams.offsetX = 0;
         wallDecorParams.offsetY = 0;
         wallDecorParams.offsetZ = 0.08;
 
-        console.log('🎯 Starting wall selection mode...');
         // Enter wall selection mode
         const selectionStarted = startWallSelectionMode();
-        console.log('Wall selection mode started:', selectionStarted);
 
         // Hide loader AFTER starting selection mode
         setTimeout(() => {
             loader.classList.remove('active');
             backdrop.classList.remove('active');
-            console.log('✅ Loader hidden');
+            console.log(' Loader hidden');
         }, 100);
 
         if (selectionStarted) {
@@ -183,13 +181,11 @@ export async function selectWallDecor(decorPath) {
             document.getElementById('wallDecorSidebar').classList.remove('open');
             // Show controls after sidebar closes
             showAllControls();
-            console.log('✅ Wall selection mode fully initialized');
         } else {
             loader.classList.remove('active');
             backdrop.classList.remove('active');
             status.textContent = 'Error: Could not start wall selection';
             status.style.display = 'block';
-            console.error('❌ Failed to start wall selection mode');
         }
 
     } catch (error) {
@@ -353,10 +349,6 @@ export function initializeUI(cleanupSceneFunc) {
         if (selectedFile) {
             await generateSplatFromImage(selectedFile, cleanupSceneFunc);
         }
-    });
-
-    document.getElementById('downloadPlyBtn').addEventListener('click', () => {
-        downloadGeneratedPLY();
     });
 
     document.getElementById('debugDownloadPlyBtn').addEventListener('click', () => {

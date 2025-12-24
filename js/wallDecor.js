@@ -470,7 +470,7 @@ export function placeWallDecorOnWall(selectedWall = null) {
     const distanceFromInitialCamera = initialCameraPos.distanceTo(wallCenter);
 
     // Apply distance-based offset
-    let autoOffsetZ = 0.06; // Default offset
+    let autoOffsetZ = 0.07; // Default offset
     if (distanceFromInitialCamera > 10) {
         autoOffsetZ = 0.3;
     } else if (distanceFromInitialCamera > 8) {

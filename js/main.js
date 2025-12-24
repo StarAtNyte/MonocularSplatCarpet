@@ -57,6 +57,8 @@ export function cleanupScene(clearMaskData = true) {
     wallDecorParams.offsetZ = 0.05; // Match default
     wallDecorParams.rotation = 0;
     wallDecorParams.scale = 0.5;
+
+    rugParams.brightness = 1.0;
 }
 
 // Initialize viewer
@@ -115,6 +117,17 @@ function updateViewport() {
 
     // Update camera aspect to match target
     viewerInstance.camera.aspect = targetAspect;
+
+    // Adjust FOV based on aspect ratio to prevent cropping/zooming on non-16:9 images
+    // Base FOV is calibrated for 16:9 aspect ratio
+    const baseFOV = 50; // Default FOV for 16:9
+    const baseAspect = 16 / 9;
+
+    // For narrower aspect ratios (portrait/square), increase FOV to "zoom out"
+    // For wider aspect ratios, decrease FOV to "zoom in"
+    const fovScale = Math.sqrt(baseAspect / targetAspect);
+    viewerInstance.camera.fov = baseFOV * fovScale;
+
     viewerInstance.camera.updateProjectionMatrix();
 }
 
