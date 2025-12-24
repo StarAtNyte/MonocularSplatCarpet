@@ -497,9 +497,26 @@ export function initializeUI(cleanupSceneFunc) {
         if (event.key === 'h' || event.key === 'H') {
             const controls = document.getElementById('controls');
             const instructions = document.getElementById('instructions');
+            const rugSidebar = document.getElementById('rugSidebar');
+            const wallDecorSidebar = document.getElementById('wallDecorSidebar');
             const isVisible = controls.style.display !== 'none';
+
+            // Toggle controls and instructions
             controls.style.display = isVisible ? 'none' : 'flex';
             instructions.style.display = isVisible ? 'none' : 'block';
+
+            // Toggle lil-gui controls
+            const guiElements = document.querySelectorAll('.lil-gui.root');
+            guiElements.forEach(gui => {
+                gui.style.display = isVisible ? 'none' : '';
+            });
+
+            // Toggle sidebars
+            if (isVisible) {
+                // Hide sidebars
+                if (rugSidebar) rugSidebar.classList.remove('open');
+                if (wallDecorSidebar) wallDecorSidebar.classList.remove('open');
+            }
         }
 
         if (event.ctrlKey && event.shiftKey && event.key === 'D') {

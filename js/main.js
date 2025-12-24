@@ -1,16 +1,20 @@
 import * as THREE from 'three';
 import * as GaussianSplats3D from 'https://cdn.jsdelivr.net/npm/@mkkellogg/gaussian-splats-3d@0.4.7/build/gaussian-splats-3d.module.js';
 import {
-    viewer, currentSplatPath, splatLoaded,
+    viewer, currentSplatPath, splatLoaded, rug, wallDecor,
     setViewer, setSplatLoaded, setFloorMaskData, setWallMaskData,
     setGeneratedSplatData, setCustomRugTexture, setDetectedPlane,
     setDetectedWallPlane, setFloorOrientation, rugParams, wallDecorParams,
-    setWallGaussianPositions, setWallGaussianBounds, setWallClusters, setActiveWall
+    setWallGaussianPositions, setWallGaussianBounds, setWallClusters, setActiveWall,
+    raycastMouseOnRug, raycastMouseOnWallDecor
 } from './utils.js';
 import { initializeUI } from './ui.js';
 import { onRugMouseDown, onRugMouseMove, onRugMouseUp, removeCurrentRug } from './rug.js';
 import { removeCurrentWallDecor, onWallDecorMouseDown, onWallDecorMouseMove, onWallDecorMouseUp } from './wallDecor.js';
 import { loadSplatFromFolder } from './api.js';
+
+// Track which object is currently being interacted with
+let activeInteractionObject = null; // 'rug' or 'wallDecor' or null
 
 // Cleanup scene function
 // clearMaskData: if true, clears floor/wall mask data (use when loading NEW scene)
@@ -127,31 +131,61 @@ loadSplatFromFolder(currentSplatPath, cleanupScene)
 
         // Combined mouse down handler
         canvas.addEventListener('mousedown', (event) => {
-            // Try wall decor first (it will return false if not applicable)
-            const wallDecorHandled = onWallDecorMouseDown(event);
-            if (!wallDecorHandled) {
-                // If wall decor didn't handle it, try rug
+            // Check what's being clicked using raycasting
+            const wallDecorIntersect = wallDecor ? raycastMouseOnWallDecor(event) : null;
+            const rugIntersect = rug ? raycastMouseOnRug(event) : null;
+
+            // Prioritize based on distance to camera (closer object gets priority)
+            if (wallDecorIntersect && rugIntersect) {
+                if (wallDecorIntersect.distance < rugIntersect.distance) {
+                    activeInteractionObject = 'wallDecor';
+                    onWallDecorMouseDown(event);
+                } else {
+                    activeInteractionObject = 'rug';
+                    onRugMouseDown(event);
+                }
+            } else if (wallDecorIntersect) {
+                activeInteractionObject = 'wallDecor';
+                onWallDecorMouseDown(event);
+            } else if (rugIntersect) {
+                activeInteractionObject = 'rug';
                 onRugMouseDown(event);
+            } else {
+                activeInteractionObject = null;
             }
         }, false);
 
         // Combined mouse move handler
         canvas.addEventListener('mousemove', (event) => {
-            // Try wall decor first
-            const wallDecorHandled = onWallDecorMouseMove(event);
-            if (!wallDecorHandled) {
-                // If wall decor didn't handle it, try rug
+            // If actively interacting with an object, only call that handler
+            if (activeInteractionObject === 'wallDecor') {
+                onWallDecorMouseMove(event);
+            } else if (activeInteractionObject === 'rug') {
                 onRugMouseMove(event);
+            } else {
+                // No active interaction - let both handlers run for hover effects
+                const wallDecorHandled = onWallDecorMouseMove(event);
+                if (!wallDecorHandled) {
+                    onRugMouseMove(event);
+                }
             }
         }, false);
 
         // Combined mouse up handler
         canvas.addEventListener('mouseup', (event) => {
-            // Try both (they check their own state)
-            const wallDecorHandled = onWallDecorMouseUp(event);
-            if (!wallDecorHandled) {
+            // Call the handler for the active object, then clear the active state
+            if (activeInteractionObject === 'wallDecor') {
+                onWallDecorMouseUp(event);
+            } else if (activeInteractionObject === 'rug') {
                 onRugMouseUp(event);
+            } else {
+                // No active object - try both
+                const wallDecorHandled = onWallDecorMouseUp(event);
+                if (!wallDecorHandled) {
+                    onRugMouseUp(event);
+                }
             }
+            activeInteractionObject = null;
         }, false);
 
         console.log('Application initialized');

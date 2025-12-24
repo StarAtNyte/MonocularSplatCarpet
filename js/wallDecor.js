@@ -678,6 +678,12 @@ export function handleWallClick(event) {
         placeWallDecorOnWall(closestWall);
         exitWallSelectionMode();
 
+        // Close the wall decor sidebar
+        const wallDecorSidebar = document.getElementById('wallDecorSidebar');
+        if (wallDecorSidebar) {
+            wallDecorSidebar.classList.remove('open');
+        }
+
         const status = document.getElementById('status');
         status.style.display = 'block';
         status.textContent = `Wall decor placed!`;

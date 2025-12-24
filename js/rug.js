@@ -191,15 +191,6 @@ function findCornerIntersection(event) {
     return null;
 }
 
-// Placeholder for wall decor interaction (referenced in mouse handlers)
-function handleWallDecorMouseDown(event) {
-    // This will be handled by wallDecor module
-}
-
-function handleWallDecorMouseMove(event) {
-    // This will be handled by wallDecor module
-}
-
 // ========== MAIN EXPORTED FUNCTIONS ==========
 
 export function createRug(textureUrl) {
@@ -541,14 +532,7 @@ export async function placeRugAuto(rugTextureUrl) {
 }
 
 export function onRugMouseDown(event) {
-    // Check wall decor first (higher priority if both exist)
-    if (wallDecor && wallDecor.visible) {
-        handleWallDecorMouseDown(event);
-        if (isDragging || isRotating || isResizing) return;
-    }
-
-    // Then check rug
-    if (!rug || !rug.visible) return;
+    if (!rug || !rug.visible) return false;
 
     // Check if clicking on corner handle (for resizing)
     const cornerIndex = findCornerIntersection(event);
@@ -579,7 +563,7 @@ export function onRugMouseDown(event) {
         if (window.pauseCameraReset) window.pauseCameraReset(true);
         viewer.renderer.domElement.style.cursor = 'nwse-resize';
         event.preventDefault();
-        return;
+        return true;
     }
 
     // Check if clicking on gizmo (for rotation)
@@ -592,7 +576,7 @@ export function onRugMouseDown(event) {
         if (window.pauseCameraReset) window.pauseCameraReset(true);
         viewer.renderer.domElement.style.cursor = 'grabbing';
         event.preventDefault();
-        return;
+        return true;
     }
 
     // Check if clicking on rug (for dragging)
@@ -630,17 +614,14 @@ export function onRugMouseDown(event) {
         if (window.pauseCameraReset) window.pauseCameraReset(true);
         viewer.renderer.domElement.style.cursor = 'grabbing';
         event.preventDefault();
+        return true;
     }
+
+    return false;
 }
 
 export function onRugMouseMove(event) {
-    // Handle wall decor interactions
-    if (wallDecor && wallDecor.visible && (isDragging || isRotating || isResizing)) {
-        handleWallDecorMouseMove(event);
-        return;
-    }
-
-    if (!rug || !rug.visible) return;
+    if (!rug || !rug.visible) return false;
 
     if (isResizing) {
         // Raycast to floor plane to find mouse position in 3D space
@@ -692,6 +673,7 @@ export function onRugMouseMove(event) {
         }
 
         event.preventDefault();
+        return true;
     } else if (isRotating) {
         const deltaX = previousMouse.x - event.clientX;
         rugParams.rotation += deltaX;
@@ -706,6 +688,7 @@ export function onRugMouseMove(event) {
 
         setPreviousMouse({ x: event.clientX, y: event.clientY });
         event.preventDefault();
+        return true;
     } else if (isDragging) {
         // Raycast onto the floor plane instead of the rug for accurate dragging
         const rect = viewer.renderer.domElement.getBoundingClientRect();
@@ -746,13 +729,14 @@ export function onRugMouseMove(event) {
             updateGizmo();
             event.preventDefault();
         }
+        return true;
     } else {
         // Check wall decor hover first
         if (wallDecor && wallDecor.visible) {
             const wallIntersect = raycastMouseOnWallDecor(event);
             if (wallIntersect) {
                 viewer.renderer.domElement.style.cursor = 'move';
-                return;
+                return false; // Let wallDecor handler deal with it
             }
         }
 
@@ -761,17 +745,21 @@ export function onRugMouseMove(event) {
         if (cornerIndex !== null) {
             updateGizmo(true);
             viewer.renderer.domElement.style.cursor = 'nwse-resize';
+            return true;
         } else if (findGizmoIntersection(event)) {
             updateGizmo(true);
             viewer.renderer.domElement.style.cursor = 'grab';
+            return true;
         } else {
             const intersect = raycastMouseOnRug(event);
             if (intersect) {
                 updateGizmo(true);
                 viewer.renderer.domElement.style.cursor = 'move';
+                return true;
             } else {
                 updateGizmo(false);
                 viewer.renderer.domElement.style.cursor = 'default';
+                return false;
             }
         }
     }
@@ -790,5 +778,7 @@ export function onRugMouseUp(event) {
         if (window.pauseCameraReset) window.pauseCameraReset(false);
         viewer.renderer.domElement.style.cursor = 'default';
         event.preventDefault();
+        return true;
     }
+    return false;
 }
