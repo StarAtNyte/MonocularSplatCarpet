@@ -10,6 +10,7 @@ from fastapi.responses import Response, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import base64
+import gzip
 
 # Define the Modal App
 app = modal.App("sharp-api-myroom-v2")
@@ -352,14 +353,34 @@ def process_image(image_bytes: bytes, render_video: bool = False):
         print(f"   - Inference: {inference_end - inference_start:.2f}s")
         print(f"   - File I/O: {end_time - inference_end:.2f}s")
 
+        # Compress PLY with gzip (level 6 = balanced speed/size)
+        compression_start = time.time()
+        ply_compressed = gzip.compress(ply_bytes, compresslevel=6)
+        compression_time = time.time() - compression_start
+
+        ply_original_size = len(ply_bytes)
+        ply_compressed_size = len(ply_compressed)
+        ply_reduction = 100 * (1 - ply_compressed_size / ply_original_size)
+
+        print(f"⏱️ PLY compression time: {compression_time:.2f}s")
+        print(f"📦 PLY size: {ply_original_size / 1024 / 1024:.2f}MB → {ply_compressed_size / 1024 / 1024:.2f}MB ({ply_reduction:.1f}% reduction)")
+
+        # Compress boolean masks using bitpacking (8x smaller than JSON arrays)
+        # Pack boolean arrays into binary format (1 bit per boolean)
+        floor_mask_packed = np.packbits(floor_gaussian_mask)
+        wall_mask_packed = np.packbits(wall_gaussian_mask)
+
         return {
-            "ply": base64.b64encode(ply_bytes).decode('utf-8'),
+            "ply": base64.b64encode(ply_compressed).decode('utf-8'),
+            "ply_compressed": True,  # Flag to indicate PLY is gzipped
             "floor_mask_2d": base64.b64encode(floor_mask_bytes).decode('utf-8'),
-            "floor_mask_3d": floor_gaussian_mask.tolist(),
+            "floor_mask_3d": base64.b64encode(floor_mask_packed.tobytes()).decode('utf-8'),
+            "floor_mask_3d_length": int(len(floor_gaussian_mask)),  # Needed for unpacking
             "floor_coverage_2d": float(np.sum(floor_mask > 0) / floor_mask.size),
             "floor_coverage_3d": float(np.sum(floor_gaussian_mask) / len(floor_gaussian_mask)),
             "wall_mask_2d": base64.b64encode(wall_mask_bytes).decode('utf-8'),
-            "wall_mask_3d": wall_gaussian_mask.tolist(),
+            "wall_mask_3d": base64.b64encode(wall_mask_packed.tobytes()).decode('utf-8'),
+            "wall_mask_3d_length": int(len(wall_gaussian_mask)),  # Needed for unpacking
             "wall_coverage_2d": float(np.sum(wall_mask > 0) / wall_mask.size),
             "wall_coverage_3d": float(np.sum(wall_gaussian_mask) / len(wall_gaussian_mask)),
             "camera": camera_params,
@@ -391,19 +412,22 @@ def fastapi_app():
     async def root():
         return {
             "name": "Sharp API",
-            "description": "Monocular View Synthesis - Fast Splat Generation with 2D+3D Floor/Rug/Wall Segmentation",
-            "version": "2.2.0",
+            "description": "Monocular View Synthesis - Fast Splat Generation with 2D+3D Floor/Rug/Wall Segmentation (Optimized with Compression)",
+            "version": "2.3.0",
             "endpoints": {
                 "/predict": "POST - Upload an image to generate a 3D gaussian splat PLY file with 2D and 3D floor/rug/wall segmentation"
             },
             "response_format": {
-                "ply": "base64-encoded PLY file (3D Gaussian splat)",
+                "ply": "base64-encoded gzip-compressed PLY file (3D Gaussian splat)",
+                "ply_compressed": "boolean - true if PLY is gzip compressed (requires client-side decompression)",
                 "floor_mask_2d": "base64-encoded PNG image (binary floor+rug mask at image resolution)",
-                "floor_mask_3d": "boolean array mapping each Gaussian to floor/rug or not",
+                "floor_mask_3d": "base64-encoded bitpacked boolean array (1 bit per Gaussian)",
+                "floor_mask_3d_length": "int - original length of floor mask array before packing",
                 "floor_coverage_2d": "float - percentage of image pixels identified as floor/rug (0.0 to 1.0)",
                 "floor_coverage_3d": "float - percentage of Gaussians identified as floor/rug (0.0 to 1.0)",
                 "wall_mask_2d": "base64-encoded PNG image (binary wall mask at image resolution)",
-                "wall_mask_3d": "boolean array mapping each Gaussian to wall or not",
+                "wall_mask_3d": "base64-encoded bitpacked boolean array (1 bit per Gaussian)",
+                "wall_mask_3d_length": "int - original length of wall mask array before packing",
                 "wall_coverage_2d": "float - percentage of image pixels identified as wall (0.0 to 1.0)",
                 "wall_coverage_3d": "float - percentage of Gaussians identified as wall (0.0 to 1.0)",
                 "camera": {
