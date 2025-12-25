@@ -272,7 +272,7 @@ export function createRug(textureUrl) {
             texture.needsUpdate = true;
 
             // Use BoxGeometry instead of PlaneGeometry to give the rug thickness/depth
-            const rugDepth = 0.05; // Increased thickness (closer to MyRoomHelper)
+            const rugDepth = 0.025; // Increased thickness (closer to MyRoomHelper)
             const geometry = new THREE.BoxGeometry(rugWidth, rugHeight, rugDepth);
             const material = new THREE.MeshBasicMaterial({
                 map: texture,
