@@ -1,4 +1,4 @@
-# Monocular Splat Carpet
+# MyRoom3D
 
 A JavaScript web application for interactive rug and wall decor placement in 3D Gaussian Splatting (3DGS) scene generated from a single room image.
 
