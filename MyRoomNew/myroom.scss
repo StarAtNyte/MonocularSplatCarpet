@@ -1,0 +1,555 @@
+$qr-code-width: 80px;
+#myroom-container {
+  width: 100%;
+  height: 100%;
+
+  display: flex;
+  & > canvas {
+    position: absolute;
+    margin: auto;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    -webkit-box-sizing: border-box;
+    box-sizing: border-box;
+    -ms-touch-action: none;
+    touch-action: none;
+    -webkit-user-select: none;
+    -moz-user-select: none;
+    -ms-user-select: none;
+    user-select: none;
+    -webkit-user-drag: none;
+    -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
+  }
+  & > .overlay-canvas {
+    -ms-touch-action: pinch-zoom;
+    touch-action: pinch-zoom;
+  }
+}
+#mask-canvas {
+  pointer-events: none;
+}
+
+.myroom-controls {
+  position: absolute;
+  box-shadow: -3px 2px 6px rgba(16, 22, 26, 0.2), 0px 1px 1px rgba(16, 22, 26, 0.2),
+    0px 0px 0px rgba(16, 22, 26, 0.1);
+  background-color: var(--bg-primary);
+  &.topLeft {
+    flex-direction: column;
+    left: calc(100% + 1rem);
+    top: 50%;
+    transform: translateY(-50%);
+  }
+  &.middleRight {
+    width: 5em;
+    height: 5em;
+    border-radius: 50%;
+    clip: rect(0 2.5em 5rem -2em);
+    right: calc(100% - 2.5em);
+    &--expanded {
+      box-shadow: none;
+    }
+  }
+  &.bottomBar {
+    bottom: 0;
+    left: 100%;
+    width: 100vw;
+    box-shadow: none;
+    border-radius: 0;
+  }
+  &.camera-options {
+    position: absolute;
+    right: 100%;
+    top: 50%;
+    transform: translateY(-50%);
+    width: auto;
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+    height: fit-content;
+    height: 5rem;
+
+    & > .camera-options__button {
+      width: 11rem;
+      text-align: left;
+      height: 2.5rem;
+      align-items: center;
+      justify-content: left;
+    }
+    & h6 {
+      margin: auto;
+      text-align: left;
+      margin-left: 0;
+    }
+  }
+}
+label.camera-options__button > button {
+  width: 10rem;
+  height: 100%;
+  text-align: left;
+  align-items: center;
+  justify-content: left;
+  position: absolute;
+  top: 0;
+}
+.middleRight {
+  vertical-align: middle;
+  top: 0;
+  bottom: 0;
+  margin: auto;
+  height: 3em;
+}
+#myroomCamera {
+  width: 5em;
+  height: 100%;
+  border-radius: 50%;
+  justify-content: flex-start;
+  outline: none;
+}
+.rightBarPortal {
+  bottom: 0;
+  z-index: -1;
+}
+#left-sidebar .bp3-portal {
+  bottom: 0;
+  z-index: -1;
+}
+.vertSeparator {
+  width: 1px;
+  height: 1.5rem;
+  margin: 0.5rem 0.3rem;
+  border: 1px solid #c7cbce;
+}
+.at-webcam {
+  position: absolute;
+  z-index: 500;
+  width: 100vw;
+  height: 100vh;
+  background-color: var(--bg-primary-hover);
+  & > #MyRoomvideo {
+    position: absolute;
+    z-index: 500;
+    left: 0;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    margin: auto;
+    width: 100%;
+    height: 100%;
+  }
+  &--controls {
+    position: absolute;
+    top: 50%;
+    right: 1rem;
+    z-index: 500;
+    transform: translateY(-50%);
+  }
+}
+
+//icebreaker css
+
+.at-myroomicebreaker-container {
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  z-index: -2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.at-myroomicebreaker-image {
+  position: absolute;
+  object-fit: cover;
+}
+.at-myroomicebreaker-contents {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  overflow: auto;
+  align-items: center;
+  justify-content: center;
+  flex-flow: wrap;
+  position: absolute;
+  padding: 2rem;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  & * {
+    margin: 0;
+    margin-right: 0 !important;
+    max-width: clamp(200px, 15vw, 25rem);
+  }
+  & > label {
+    display: flex;
+    flex-direction: column;
+  }
+  & > label .bp3-card {
+    margin-right: 0;
+    flex-basis: 100%;
+  }
+  & .scan-wrapper {
+    width: 100%;
+    top: 100%;
+    & > svg {
+      width: 50%;
+    }
+  }
+  & .cardimg {
+    max-width: 100%;
+    border-radius: 3px;
+  }
+
+  .bp3-card {
+    padding: 0;
+    margin-right: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    background-color: var(--bg-primary);
+  }
+  .bp3-button.bp3-minimal {
+    display: flex;
+    flex-direction: row;
+    justify-content: flex-start;
+    padding: 0.5rem;
+  }
+  .at-button.at-minimal {
+    display: flex;
+    flex-direction: row;
+    justify-content: flex-start;
+    padding: 0.5rem;
+    min-height: 3rem;
+  }
+  .bp3-button .at-icon {
+    color: inherit;
+    padding: 0.5rem;
+  }
+  .bp3-button-text {
+    font-weight: bold;
+    font-size: 0.95rem;
+  }
+  .scan-text {
+    padding-left: 0.5rem;
+    color: #30363b;
+    font-size: 0.875rem;
+    line-height: 1.125rem;
+    height: fit-content;
+    width: calc(100% - #{$qr-code-width});
+    word-break: break-word;
+    text-align: left;
+  }
+  .scan-qr {
+    width: 80px;
+    height: 80px;
+    min-width: 80px;
+    background: #c2c2c2;
+  }
+  .scan-wrapper {
+    background: #f7f8f8;
+    border-radius: 0px 0px 4px 4px;
+    padding: 0.75rem 0.5rem 0.5rem 0.5rem;
+    z-index: -1;
+    position: absolute;
+    display: flex;
+    flex-direction: row;
+    justify-content: center;
+    display: none;
+  }
+
+  .at-ar-card {
+    max-height: unset;
+    & > .bp3-card {
+      border-radius: 3px 3px 0 0;
+    }
+    .scan-wrapper {
+      z-index: 1;
+      display: flex;
+      .qr-code {
+        width: $qr-code-width;
+        canvas {
+          width: 100% !important;
+          height: auto !important;
+        }
+      }
+    }
+    .scan-qr-wrapper {
+      flex: 0;
+      display: block;
+      width: 100%;
+      position: absolute;
+      top: 100%;
+      text-align: center;
+      background: #f7f8f8;
+      margin-top: -1rem;
+      padding: 1rem;
+      height: 9rem;
+      &.hidden {
+        display: none;
+      }
+
+      canvas {
+        height: 80% !important;
+        width: 100% !important;
+        object-fit: contain;
+      }
+    }
+    .ar-play-store,
+    .ar-app-store {
+      cursor: pointer;
+      text-decoration: underline;
+    }
+    .ar-app-store-area {
+      display: flex;
+      flex-direction: row;
+      justify-content: space-around;
+      padding: 0.5rem 0;
+      a {
+        padding: 1rem 0;
+      }
+    }
+  }
+  .card-image-wrapper {
+    display: flex;
+    flex-direction: column;
+  }
+  .opt-1-wrapper {
+    margin-right: 1.5rem;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    &.disabled {
+      opacity: 0.8;
+      cursor: not-allowed;
+    }
+  }
+  .opt-1-wrapper .bp3-card {
+    margin-right: 0;
+    flex-basis: 100%;
+  }
+  .hiddeninput {
+    display: none;
+  }
+}
+.at-dialog.at-myroom-Message-dialog {
+  width: 25rem;
+  & .bp3-form-helper-text {
+    margin-bottom: 1rem;
+  }
+}
+.ar-stores-separator {
+  flex: 0 0 1.6rem;
+  align-items: center;
+  justify-content: center;
+  display: flex;
+}
+
+@media only screen and (min-width: 500px) and (max-width: 1600px) {
+  .at-myroomicebreaker-contents {
+    height: auto;
+    width: auto;
+    text-align: center;
+    overflow: visible;
+    & > * {
+      // width: max(20vw, 160px);
+      width: clamp(200px, 15vw, 25rem);
+      margin: 0;
+      justify-content: center;
+    }
+  }
+}
+
+@media only screen and (max-width: 1400px) {
+  .at-myroomicebreaker-contents {
+    .at-ar-card .scan-wrapper {
+      display: none;
+    }
+  }
+}
+
+@media only screen and (max-height: 700px) {
+  .at-myroomicebreaker-contents {
+    .at-ar-card .scan-wrapper {
+      display: none;
+    }
+  }
+}
+@media only screen and (max-height: 500px) {
+  .at-myroomicebreaker-container {
+    overflow: auto;
+    align-items: flex-start;
+  }
+}
+@media only screen and (max-width: 800px) {
+  .at-myroomicebreaker-contents {
+    .bp3-button-text {
+      font-size: 0.75rem;
+      line-height: 1rem;
+    }
+
+    .bp3-button.bp3-minimal {
+      padding: 0;
+    }
+    .scan-wrapper {
+      flex-direction: column;
+      align-items: center;
+      box-sizing: border-box;
+    }
+    .at-ar-card .scan-wrapper {
+      position: unset;
+    }
+    .scan-text {
+      width: 100%;
+      font-size: 0.75em;
+      line-height: 0.8rem;
+      padding-left: 0;
+    }
+  }
+}
+@media only screen and (max-height: 500px) {
+  .at-myroomicebreaker-contents {
+    .bp3-button-text {
+      font-size: 0.75rem;
+      line-height: 1rem;
+    }
+
+    .bp3-button.bp3-minimal {
+      padding: 0;
+    }
+    .scan-wrapper {
+      flex-direction: column;
+      align-items: center;
+      box-sizing: border-box;
+    }
+    .at-ar-card .scan-wrapper {
+      position: unset;
+    }
+    .scan-text {
+      font-size: 0.75em;
+      line-height: 0.8rem;
+      padding-left: 0;
+    }
+  }
+}
+
+@media only screen and (max-width: 500px) {
+  .at-myroomicebreaker-contents {
+    overflow: auto;
+    flex-direction: column !important;
+    flex-wrap: nowrap;
+    justify-content: flex-start;
+    & > * {
+      margin-top: unset;
+    }
+    & > div,
+    & > label {
+      max-width: 70%;
+    }
+
+    .card-image-wrapper {
+      overflow: hidden;
+      position: relative;
+    }
+
+    .cardimg {
+      width: auto;
+      height: auto;
+      max-width: unset !important;
+      position: relative;
+    }
+    .scan-wrapper {
+      flex-direction: row;
+    }
+    .scan-text {
+      font-size: 0.9em;
+      line-height: 1rem;
+      padding-left: 0.5rem;
+    }
+  }
+}
+
+@media only screen and (max-width: 400px) {
+  .at-myroomicebreaker-contents .at-ar-card .ar-app-store-area {
+    flex-direction: column;
+    align-items: center;
+  }
+}
+
+// Debug buttons styling - FORCE visible icons
+.myroom-controls.topLeft {
+  .debug-button {
+    border: 1px dashed rgba(128, 128, 128, 0.5) !important;
+    justify-content: center !important;
+    text-align: center !important;
+    min-width: auto !important;
+    width: auto !important;
+
+    .bp3-button-text {
+      font-size: 10px !important;
+      font-weight: bold !important;
+      color: #000000 !important;
+      flex: 0 !important;
+    }
+
+    .bp3-icon,
+    .bp3-icon svg,
+    svg {
+      color: #000000 !important;
+      fill: #000000 !important;
+      opacity: 1 !important;
+      margin-right: 4px !important;
+    }
+
+    &:hover {
+      background-color: rgba(0, 0, 0, 0.05) !important;
+    }
+  }
+
+  .debug-button.at-active {
+    background-color: #2196F3 !important;
+
+    .bp3-button-text {
+      color: #FFFFFF !important;
+    }
+
+    .bp3-icon,
+    .bp3-icon svg,
+    svg {
+      color: #FFFFFF !important;
+      fill: #FFFFFF !important;
+    }
+  }
+
+  // Antimous test button
+  button[title*="Antimous"] {
+    .bp3-button-text {
+      color: #FF6F00 !important;
+    }
+
+    .bp3-icon,
+    .bp3-icon svg,
+    svg {
+      color: #FF6F00 !important;
+      fill: #FF6F00 !important;
+    }
+
+    &:hover {
+      background-color: rgba(255, 111, 0, 0.1) !important;
+    }
+
+    // Active state for TEST button - orange theme
+    &.at-active {
+      background-color: #FF6F00 !important;
+
+      .bp3-button-text {
+        color: #FFFFFF !important;
+      }
+
+      .bp3-icon,
+      .bp3-icon svg,
+      svg {
+        color: #FFFFFF !important;
+        fill: #FFFFFF !important;
+      }
+    }
+  }
+}

@@ -45,7 +45,7 @@ function placeRugOnHorizontalFloor(plane, cameraPos, cameraDir) {
         } else {
             // Use the intersection point, but limit the distance to keep rug close
             const distanceToIntersection = cameraPos.distanceTo(rayTarget);
-            const maxDistance = 3.0; // Maximum 3.0 meters from camera
+            const maxDistance = 2.5; // Maximum 3.0 meters from camera
 
             if (distanceToIntersection > maxDistance) {
                 // Place at fixed distance along camera direction, then project to floor
@@ -77,7 +77,7 @@ function placeRugOnHorizontalFloor(plane, cameraPos, cameraDir) {
     }
 
     // Add small offset along floor normal to place rug slightly above the floor plane
-    const rugHeightOffset = 0.0001; // 0.01cm above the detected floor plane
+    const rugHeightOffset = 0.001; // 2cm above the detected floor plane (prevents Z-fighting)
     position.add(plane.normal.clone().multiplyScalar(rugHeightOffset));
 
     console.log('Rug position:', position);
@@ -264,12 +264,19 @@ export function createRug(textureUrl) {
                 autoRotation = 90;
             }
 
+            // Improve texture quality (Matches MyRoomHelper)
+            if (viewer && viewer.renderer) {
+                texture.anisotropy = viewer.renderer.capabilities.getMaxAnisotropy();
+            }
+            texture.colorSpace = THREE.SRGBColorSpace;
+            texture.needsUpdate = true;
+
             // Use BoxGeometry instead of PlaneGeometry to give the rug thickness/depth
-            const rugDepth = 0.01; // Add some thickness to the rug
+            const rugDepth = 0.05; // Increased thickness (closer to MyRoomHelper)
             const geometry = new THREE.BoxGeometry(rugWidth, rugHeight, rugDepth);
             const material = new THREE.MeshBasicMaterial({
                 map: texture,
-                side: THREE.DoubleSide,
+                side: THREE.FrontSide, // FrontSide is enough for BoxGeometry
                 transparent: true,
                 color: new THREE.Color(rugParams.brightness, rugParams.brightness, rugParams.brightness)
             });
