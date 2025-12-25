@@ -23,12 +23,12 @@ export function populateRugGrid() {
 
     const rugs = [
         { name: 'Abanes', path: 'assets/rugs/Abanes.jpg' },
-        { name: 'Abiponet', path: 'assets/rugs/Abiponet.png' },
+        { name: 'Abiponet', path: 'assets/rugs/Abiponet.jpg' },
         { name: 'Atlantede', path: 'assets/rugs/Atlantede.jpg' },
         { name: 'Cubinia', path: 'assets/rugs/Cubinia.png' },
         { name: 'Easther', path: 'assets/rugs/Easther.jpg' },
         { name: 'Tappeto Classico', path: 'assets/rugs/Tappeto Classico.jpg' },
-        { name: 'Tappeto Classico Sea Green', path: 'assets/rugs/Tappeto Classico Sea Green .jpg' },
+        { name: 'Tappeto Classico Sea Green', path: 'assets/rugs/Tappeto Classico Sea Green.jpg' },
         { name: 'Telerense', path: 'assets/rugs/Telerense.jpg' }
     ];
 
