@@ -304,8 +304,9 @@ export async function loadGeneratedSplat(cleanupSceneFunc) {
         generateBtn.textContent = 'Generate Splat';
 
         // Enable download buttons
-        document.getElementById('downloadPlyBtn').disabled = false;
-        document.getElementById('debugDownloadPlyBtn').disabled = false;
+        if (document.getElementById('debugDownloadPlyBtn')) {
+            document.getElementById('debugDownloadPlyBtn').disabled = false;
+        }
 
     } catch (error) {
         console.error('Error loading generated splat:', error);
