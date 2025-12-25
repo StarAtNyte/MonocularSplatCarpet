@@ -38,14 +38,14 @@ function placeRugOnHorizontalFloor(plane, cameraPos, cameraDir) {
 
         if (dotProduct < 0) {
             // Intersection is behind camera (ray pointing away from floor)
-            const defaultDistance = 1.5;
+            const defaultDistance = 2.0;
             const targetPoint = cameraPos.clone().add(rayDir.clone().multiplyScalar(defaultDistance));
             position = floorPlane.projectPoint(targetPoint, new THREE.Vector3());
             console.log(`Ray intersection behind camera, placed ${defaultDistance}m in front instead`);
         } else {
             // Use the intersection point, but limit the distance to keep rug close
             const distanceToIntersection = cameraPos.distanceTo(rayTarget);
-            const maxDistance = 2.5; // Maximum 2.5 meters from camera
+            const maxDistance = 3.0; // Maximum 3.0 meters from camera
 
             if (distanceToIntersection > maxDistance) {
                 // Place at fixed distance along camera direction, then project to floor
@@ -67,7 +67,7 @@ function placeRugOnHorizontalFloor(plane, cameraPos, cameraDir) {
 
         if (dotProduct < 0) {
             // Rug is behind camera, place it in front instead
-            const defaultDistance = 1.5; // 1.5 meters in front
+            const defaultDistance = 2.0; // 2.0 meters in front
             const targetPoint = cameraPos.clone().add(rayDir.clone().multiplyScalar(defaultDistance));
             position = floorPlane.projectPoint(targetPoint, new THREE.Vector3());
             console.log(`Rug was behind camera, placed ${defaultDistance}m in front instead`);
@@ -245,9 +245,24 @@ export function createRug(textureUrl) {
                 setGizmoHandle(null);
             }
 
-            const rugWidth = 2;
-            const aspectRatio = texture.image.height / texture.image.width;
-            const rugHeight = rugWidth * aspectRatio;
+            // Determine orientation based on image aspect ratio
+            const textureAspect = texture.image.width / texture.image.height;
+            const isLandscape = textureAspect >= 1;
+            let rugWidth, rugHeight;
+            let autoRotation = 0;
+
+            if (isLandscape) {
+                // Landscape: make rug wider than tall, longer side along width
+                rugWidth = 2;
+                rugHeight = 2 / textureAspect;
+            } else {
+                // Portrait: make rug wider than tall by using reciprocal aspect
+                // This ensures longer side is still along width
+                rugWidth = 2;
+                rugHeight = 2 * textureAspect;
+                // Add 90 degree rotation to orient texture correctly
+                autoRotation = 90;
+            }
 
             // Use BoxGeometry instead of PlaneGeometry to give the rug thickness/depth
             const rugDepth = 0.01; // Add some thickness to the rug
@@ -261,6 +276,8 @@ export function createRug(textureUrl) {
 
             const rugMesh = new THREE.Mesh(geometry, material);
             rugMesh.visible = rugParams.visible;
+            // Store auto-rotation for portrait images
+            rugMesh.userData.autoRotation = autoRotation;
             setRug(rugMesh);
 
             // Create 3D gizmo as child of rug
@@ -580,6 +597,11 @@ export async function placeRugAuto(rugTextureUrl) {
             rugParams.offsetX = 0;
             rugParams.offsetY = 0;
             rugParams.offsetZ = 0;
+
+            // Apply auto-rotation for portrait images
+            if (rug && rug.userData.autoRotation) {
+                rugParams.rotation = rug.userData.autoRotation;
+            }
 
             placeRugOnFloor();
 
