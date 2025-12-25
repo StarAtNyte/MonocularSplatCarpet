@@ -77,7 +77,7 @@ function placeRugOnHorizontalFloor(plane, cameraPos, cameraDir) {
     }
 
     // Add small offset along floor normal to place rug slightly above the floor plane
-    const rugHeightOffset = 0.001; // 2cm above the detected floor plane (prevents Z-fighting)
+    const rugHeightOffset = 0.001; // 0.1 cm above the detected floor plane (prevents Z-fighting)
     position.add(plane.normal.clone().multiplyScalar(rugHeightOffset));
 
     console.log('Rug position:', position);
@@ -247,21 +247,18 @@ export function createRug(textureUrl) {
 
             // Determine orientation based on image aspect ratio
             const textureAspect = texture.image.width / texture.image.height;
-            const isLandscape = textureAspect >= 1;
             let rugWidth, rugHeight;
-            let autoRotation = 0;
 
-            if (isLandscape) {
-                // Landscape: make rug wider than tall, longer side along width
-                rugWidth = 2;
-                rugHeight = 2 / textureAspect;
+            // Base the sizing on a standard "long side" of 2.5 units (~8-10 feet in typical splat scale)
+            // This ensures the rug geometry matches the image aspect ratio perfectly
+            if (textureAspect >= 1) {
+                // Landscape image
+                rugWidth = 2.5;
+                rugHeight = 2.5 / textureAspect;
             } else {
-                // Portrait: make rug wider than tall by using reciprocal aspect
-                // This ensures longer side is still along width
-                rugWidth = 2;
-                rugHeight = 2 * textureAspect;
-                // Add 90 degree rotation to orient texture correctly
-                autoRotation = 90;
+                // Portrait image
+                rugWidth = 2.5 * textureAspect;
+                rugHeight = 2.5;
             }
 
             // Improve texture quality (Matches MyRoomHelper)
@@ -272,8 +269,13 @@ export function createRug(textureUrl) {
             texture.needsUpdate = true;
 
             // Use BoxGeometry instead of PlaneGeometry to give the rug thickness/depth
-            const rugDepth = 0.022; // Increased thickness (closer to MyRoomHelper)
+            const rugDepth = 0.022; // User preferred thickness
             const geometry = new THREE.BoxGeometry(rugWidth, rugHeight, rugDepth);
+
+            // Offset geometry so the pivot (0,0,0) is at the bottom center of the rug
+            // This makes placement and rotation much more intuitive
+            geometry.translate(0, 0, rugDepth / 2);
+
             const material = new THREE.MeshBasicMaterial({
                 map: texture,
                 side: THREE.FrontSide, // FrontSide is enough for BoxGeometry
@@ -283,15 +285,15 @@ export function createRug(textureUrl) {
 
             const rugMesh = new THREE.Mesh(geometry, material);
             rugMesh.visible = rugParams.visible;
-            // Store auto-rotation for portrait images
-            rugMesh.userData.autoRotation = autoRotation;
             setRug(rugMesh);
 
             // Create 3D gizmo as child of rug
             const smallerDim = Math.min(rugWidth, rugHeight);
-            const ringRadius = smallerDim * 0.25; // Smaller ring
-            const tubeRadius = 0.015;
-            const gizmoHeight = 0.20; // Higher above rug surface
+            const ringRadius = smallerDim * 0.25;
+            const tubeRadius = 0.012; // Slightly thinner tube
+            // Lower height above the rug surface to reduce perspective distortion
+            // Surface is at Z=rugDepth now
+            const gizmoHeight = rugDepth + 0.01;
 
             // Darker steel color for visibility
             const steelColor = 0x4a4a4a;
@@ -314,7 +316,7 @@ export function createRug(textureUrl) {
             // Create diamond handle at the bottom of the ring for rotation indicator
             const handleGeometry = new THREE.OctahedronGeometry(0.06, 0);
             const handleMaterial = new THREE.MeshBasicMaterial({
-                color: steelColor, // Same stainless steel color
+                color: steelColor,
                 transparent: true,
                 opacity: 0.9,
                 depthTest: false,
@@ -327,9 +329,10 @@ export function createRug(textureUrl) {
             gizmoHandleMesh.visible = false;
             setGizmoHandle(gizmoHandleMesh);
 
-            // Create corner resize handles (small white squares with black outline like MS Paint)
+            // Create corner resize handles
             const newCornerHandles = [];
-            const cornerZ = rugDepth / 2 + 0.05; // Higher above the rug surface for visibility
+            // Just slightly above the rug top surface
+            const cornerZ = rugDepth + 0.005;
             const cornerPositions = [
                 { x: rugWidth / 2, y: rugHeight / 2 },   // Top-right
                 { x: -rugWidth / 2, y: rugHeight / 2 },  // Top-left
@@ -337,10 +340,9 @@ export function createRug(textureUrl) {
                 { x: rugWidth / 2, y: -rugHeight / 2 }   // Bottom-right
             ];
 
-            const handleSize = 0.08; // Larger square size for visibility
-            const outlineThickness = 0.01; // Outline thickness
+            const handleSize = 0.08;
+            const outlineThickness = 0.01;
 
-            // Black outline (slightly larger box behind)
             const outlineGeometry = new THREE.BoxGeometry(
                 handleSize + outlineThickness * 2,
                 handleSize + outlineThickness * 2,
@@ -353,7 +355,6 @@ export function createRug(textureUrl) {
                 side: THREE.DoubleSide
             });
 
-            // White fill (smaller box in front)
             const cornerGeometry = new THREE.BoxGeometry(handleSize, handleSize, 0.01);
             const cornerMaterial = new THREE.MeshBasicMaterial({
                 color: 0xffffff,
@@ -363,18 +364,15 @@ export function createRug(textureUrl) {
             });
 
             cornerPositions.forEach((pos, index) => {
-                // Create a group for the corner handle
                 const cornerGroup = new THREE.Group();
                 cornerGroup.position.set(pos.x, pos.y, cornerZ);
                 cornerGroup.visible = false;
                 cornerGroup.userData.cornerIndex = index;
 
-                // Add black outline box
                 const outline = new THREE.Mesh(outlineGeometry, outlineMaterial.clone());
                 outline.renderOrder = 999;
                 cornerGroup.add(outline);
 
-                // Add white fill box (slightly in front)
                 const fill = new THREE.Mesh(cornerGeometry, cornerMaterial.clone());
                 fill.position.z = 0.006;
                 fill.renderOrder = 1000;
@@ -385,7 +383,6 @@ export function createRug(textureUrl) {
             });
             setCornerHandles(newCornerHandles);
 
-            // Add gizmo as children of rug
             rugMesh.add(gizmoRingMesh);
             rugMesh.add(gizmoHandleMesh);
 
@@ -599,16 +596,11 @@ export async function placeRugAuto(rugTextureUrl) {
 
             console.log('Rug replaced at saved position:', savedPosition);
         } else {
-            // First rug OR camera moved - place based on current camera position
             // Reset offsets since we're calculating a fresh position
             rugParams.offsetX = 0;
             rugParams.offsetY = 0;
             rugParams.offsetZ = 0;
-
-            // Apply auto-rotation for portrait images
-            if (rug && rug.userData.autoRotation) {
-                rugParams.rotation = rug.userData.autoRotation;
-            }
+            rugParams.rotation = 0; // Start at 0 rotation for new rug
 
             placeRugOnFloor();
 
