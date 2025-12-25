@@ -22,6 +22,8 @@ export function populateRugGrid() {
     grid.innerHTML = '';
 
     const rugs = [
+        { name: 'Abanes', path: 'assets/rugs/Abanes.jpg' },
+        { name: 'Abiponet', path: 'assets/rugs/Abiponet.png' },
         { name: 'Atlantede', path: 'assets/rugs/Atlantede.jpg' },
         { name: 'Cubinia', path: 'assets/rugs/Cubinia.png' },
         { name: 'Easther', path: 'assets/rugs/Easther.jpg' },
